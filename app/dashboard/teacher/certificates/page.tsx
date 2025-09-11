@@ -26,35 +26,73 @@ import {
   X,
   ThumbsUp,
   ThumbsDown,
+  RefreshCw,
 } from "lucide-react"
 import { useState, useEffect } from "react"
 import { getCurrentUser, getCertificatesByTeacher, updateCertificateStatus } from "@/lib/data"
 import { toast } from "sonner"
 
+interface Certificate {
+  id: number
+  student_id: string
+  student_name: string
+  student_email: string
+  student_roll_number: string
+  title: string
+  company_name: string
+  position: string
+  duration: string
+  start_date: string
+  end_date: string
+  grade: string
+  supervisor_name: string
+  supervisor_email: string
+  description: string
+  skills: string
+  projects: string
+  submission_date: string
+  status: "pending" | "approved" | "rejected"
+  feedback?: string
+  approved_date?: string
+  created_at: string
+}
+
+interface User {
+  id: string
+  name: string
+  email: string
+  role: string
+  department: string
+}
+
 export default function TeacherCertificatesPage() {
-  const [user, setUser] = useState(null)
-  const [certificates, setCertificates] = useState([])
-  const [filteredCertificates, setFilteredCertificates] = useState([])
+  const [user, setUser] = useState<User | null>(null)
+  const [certificates, setCertificates] = useState<Certificate[]>([])
+  const [filteredCertificates, setFilteredCertificates] = useState<Certificate[]>([])
   const [searchTerm, setSearchTerm] = useState("")
   const [statusFilter, setStatusFilter] = useState("all")
   const [companyFilter, setCompanyFilter] = useState("all")
   const [gradeFilter, setGradeFilter] = useState("all")
-  const [selectedCertificate, setSelectedCertificate] = useState(null)
+  const [selectedCertificate, setSelectedCertificate] = useState<Certificate | null>(null)
   const [showCertificateDialog, setShowCertificateDialog] = useState(false)
   const [teacherComments, setTeacherComments] = useState("")
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
+  const [processingAction, setProcessingAction] = useState(false)
 
   const fetchCertificates = async (teacherId: string) => {
     try {
       console.log("📜 Fetching certificates for teacher:", teacherId)
+      setRefreshing(true)
       const certificatesData = await getCertificatesByTeacher(teacherId)
       console.log(`✅ Loaded ${certificatesData.length} certificates`)
       setCertificates(certificatesData)
+      setRefreshing(false)
     } catch (error) {
       console.error("💥 Error fetching certificates:", error)
       toast.error("Failed to fetch certificates")
       setCertificates([])
+      setRefreshing(false)
     }
   }
 
@@ -70,7 +108,7 @@ export default function TeacherCertificatesPage() {
 
         await fetchCertificates(currentUser.id)
       } catch (error) {
-        console.error("❌ Error initializing data:", error)
+        console.error("⚠ Error initializing data:", error)
         toast.error("Failed to load data. Please try again.")
       } finally {
         setLoading(false)
@@ -82,37 +120,42 @@ export default function TeacherCertificatesPage() {
 
   const handleRefresh = async () => {
     if (!user) return
-
-    try {
-      setRefreshing(true)
-      await fetchCertificates(user.id)
-      toast.success("Certificates refreshed successfully")
-    } catch (error) {
-      console.error("❌ Error refreshing certificates:", error)
-      toast.error("Failed to refresh certificates")
-    } finally {
-      setRefreshing(false)
-    }
+    await fetchCertificates(user.id)
+    toast.success("Certificates refreshed successfully")
   }
 
   useEffect(() => {
-    const filtered = certificates.filter((certificate) => {
-      const matchesSearch =
+    let filtered = certificates
+
+    // Search filter
+    if (searchTerm) {
+      filtered = filtered.filter((certificate) => 
         certificate.student_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         certificate.student_email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         certificate.company_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         certificate.title?.toLowerCase().includes(searchTerm.toLowerCase())
+      )
+    }
 
-      const matchesStatus = statusFilter === "all" || certificate.status === statusFilter
-      const matchesCompany = companyFilter === "all" || certificate.company_name === companyFilter
+    // Status filter
+    if (statusFilter !== "all") {
+      filtered = filtered.filter((certificate) => certificate.status === statusFilter)
+    }
 
-      return matchesSearch && matchesStatus && matchesCompany
-    })
+    // Company filter
+    if (companyFilter !== "all") {
+      filtered = filtered.filter((certificate) => certificate.company_name === companyFilter)
+    }
+
+    // Grade filter
+    if (gradeFilter !== "all") {
+      filtered = filtered.filter((certificate) => certificate.grade === gradeFilter)
+    }
 
     setFilteredCertificates(filtered)
-  }, [certificates, searchTerm, statusFilter, companyFilter])
+  }, [certificates, searchTerm, statusFilter, companyFilter, gradeFilter])
 
-  const getStatusColor = (status) => {
+  const getStatusColor = (status: string) => {
     switch (status) {
       case "approved":
         return "bg-gradient-to-r from-emerald-100 to-green-100 text-emerald-700 border-emerald-200"
@@ -125,7 +168,7 @@ export default function TeacherCertificatesPage() {
     }
   }
 
-  const getStatusIcon = (status) => {
+  const getStatusIcon = (status: string) => {
     switch (status) {
       case "approved":
         return <CheckCircle className="h-4 w-4" />
@@ -138,7 +181,7 @@ export default function TeacherCertificatesPage() {
     }
   }
 
-  const getGradeColor = (grade) => {
+  const getGradeColor = (grade: string) => {
     switch (grade) {
       case "A+":
         return "text-emerald-600 bg-emerald-100"
@@ -153,17 +196,18 @@ export default function TeacherCertificatesPage() {
     }
   }
 
-  const handleViewCertificate = (certificate) => {
+  const handleViewCertificate = (certificate: Certificate) => {
     setSelectedCertificate(certificate)
     setTeacherComments(certificate.feedback || "")
     setShowCertificateDialog(true)
   }
 
-  const handleApproveCertificate = async (certificateId, action) => {
+  const handleApproveCertificate = async (certificateId: number, action: "approved" | "rejected") => {
     if (!user) return
 
     try {
-      console.log("📝 Updating certificate status:", { certificateId, action })
+      setProcessingAction(true)
+      console.log("🔄 Updating certificate status:", { certificateId, action })
 
       const result = await updateCertificateStatus(certificateId, action, teacherComments, user.id)
 
@@ -176,15 +220,14 @@ export default function TeacherCertificatesPage() {
                   ...certificate,
                   status: action,
                   feedback: teacherComments,
-                  approved_by: user.id,
-                  approved_date: action === "approved" ? new Date().toISOString() : null,
-                  updated_at: new Date().toISOString(),
+                  approved_date: action === "approved" ? new Date().toISOString() : undefined,
                 }
-              : certificate,
-          ),
+              : certificate
+          )
         )
 
         setShowCertificateDialog(false)
+        setTeacherComments("")
 
         const actionText = action === "approved" ? "approved" : "rejected"
         toast.success(`Certificate ${actionText} successfully!`)
@@ -195,12 +238,14 @@ export default function TeacherCertificatesPage() {
         toast.error(result.error || "Failed to update certificate status")
       }
     } catch (error: any) {
-      console.error("❌ Error updating certificate status:", error)
+      console.error("⚠ Error updating certificate status:", error)
       toast.error(error.message || "Failed to update certificate status")
+    } finally {
+      setProcessingAction(false)
     }
   }
 
-  const handleDownloadCertificate = (certificate) => {
+  const handleDownloadCertificate = (certificate: Certificate) => {
     // Create a mock certificate content
     const certificateContent = `
 INTERNSHIP COMPLETION CERTIFICATE
@@ -251,7 +296,15 @@ ${certificate.approved_date ? `Approval Date: ${new Date(certificate.approved_da
   }
 
   const uniqueCompanies = [...new Set(certificates.map((c) => c.company_name).filter(Boolean))]
-  const activeFiltersCount = [statusFilter, companyFilter].filter((f) => f !== "all").length
+  const activeFiltersCount = [statusFilter, companyFilter, gradeFilter].filter((f) => f !== "all").length
+
+  // Calculate stats
+  const stats = {
+    total: certificates.length,
+    pending: certificates.filter((c) => c.status === "pending").length,
+    approved: certificates.filter((c) => c.status === "approved").length,
+    rejected: certificates.filter((c) => c.status === "rejected").length,
+  }
 
   if (loading) {
     return (
@@ -297,6 +350,7 @@ ${certificate.approved_date ? `Approval Date: ${new Date(certificate.approved_da
               </div>
               <div className="flex justify-end">
                 <Button size="sm" onClick={handleRefresh} disabled={refreshing}>
+                  <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
                   {refreshing ? "Refreshing..." : "Refresh"}
                 </Button>
               </div>
@@ -307,28 +361,28 @@ ${certificate.approved_date ? `Approval Date: ${new Date(certificate.approved_da
               {[
                 {
                   title: "Total Certificates",
-                  value: certificates.length,
+                  value: stats.total,
                   icon: Award,
                   color: "purple",
                   subtitle: "All submissions",
                 },
                 {
                   title: "Pending Review",
-                  value: certificates.filter((c) => c.status === "pending").length,
+                  value: stats.pending,
                   icon: Clock,
                   color: "yellow",
                   subtitle: "Awaiting approval",
                 },
                 {
                   title: "Approved",
-                  value: certificates.filter((c) => c.status === "approved").length,
+                  value: stats.approved,
                   icon: CheckCircle,
                   color: "emerald",
                   subtitle: "Successfully approved",
                 },
                 {
                   title: "Rejected",
-                  value: certificates.filter((c) => c.status === "rejected").length,
+                  value: stats.rejected,
                   icon: XCircle,
                   color: "red",
                   subtitle: "Need corrections",
@@ -340,14 +394,12 @@ ${certificate.approved_date ? `Approval Date: ${new Date(certificate.approved_da
                 >
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                     <CardTitle className="text-xs md:text-sm font-medium text-gray-600">{stat.title}</CardTitle>
-                    <div
-                      className={`w-8 h-8 md:w-10 md:h-10 rounded-xl bg-gradient-to-br from-${stat.color}-100 to-${stat.color}-200 flex items-center justify-center`}
-                    >
+                    <div className={`w-8 h-8 md:w-10 md:h-10 rounded-xl flex items-center justify-center bg-${stat.color}-100`}>
                       <stat.icon className={`h-4 w-4 md:h-5 md:w-5 text-${stat.color}-600`} />
                     </div>
                   </CardHeader>
                   <CardContent>
-                    <div className={`text-xl md:text-3xl font-bold text-${stat.color}-600 mb-1`}>{stat.value}</div>
+                    <div className={`text-xl md:text-3xl font-bold mb-1 text-${stat.color}-600`}>{stat.value}</div>
                     <p className="text-xs text-gray-500">{stat.subtitle}</p>
                   </CardContent>
                 </Card>
@@ -439,8 +491,15 @@ ${certificate.approved_date ? `Approval Date: ${new Date(certificate.approved_da
                 <Card className="bg-white/80 backdrop-blur-sm border-0 shadow-lg">
                   <CardContent className="p-8 md:p-12 text-center">
                     <Award className="h-12 w-12 md:h-16 md:w-16 text-gray-400 mx-auto mb-4" />
-                    <h3 className="text-lg md:text-xl font-semibold text-gray-600 mb-2">No certificates found</h3>
-                    <p className="text-gray-500">Try adjusting your search criteria or filters</p>
+                    <h3 className="text-lg md:text-xl font-semibold text-gray-600 mb-2">
+                      {certificates.length === 0 ? "No certificates found" : "No certificates match your filters"}
+                    </h3>
+                    <p className="text-gray-500">
+                      {certificates.length === 0 
+                        ? "Students haven't submitted any certificates yet" 
+                        : "Try adjusting your search criteria or filters"
+                      }
+                    </p>
                   </CardContent>
                 </Card>
               ) : (
@@ -459,12 +518,12 @@ ${certificate.approved_date ? `Approval Date: ${new Date(certificate.approved_da
                             <div className="flex-1 min-w-0">
                               <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 mb-2">
                                 <h3 className="text-lg md:text-xl font-bold text-gray-900 truncate">
-                                  {certificate.student_name} - Internship Certificate
+                                  {certificate.student_name} - {certificate.title}
                                 </h3>
                                 <div className="flex flex-wrap gap-2">
                                   <Badge className={getStatusColor(certificate.status)}>
                                     {getStatusIcon(certificate.status)}
-                                    <span className="ml-1">{certificate.status}</span>
+                                    <span className="ml-1 capitalize">{certificate.status}</span>
                                   </Badge>
                                   <Badge className={`${getGradeColor(certificate.grade)} px-2 py-1`}>
                                     Grade {certificate.grade}
@@ -496,7 +555,7 @@ ${certificate.approved_date ? `Approval Date: ${new Date(certificate.approved_da
 
                           <div className="mb-4">
                             <p className="text-sm md:text-base text-gray-700 leading-relaxed line-clamp-3">
-                              {certificate.description.length > 200
+                              {certificate.description?.length > 200
                                 ? `${certificate.description.substring(0, 200)}...`
                                 : certificate.description}
                             </p>
@@ -530,7 +589,7 @@ ${certificate.approved_date ? `Approval Date: ${new Date(certificate.approved_da
                           )}
                         </div>
 
-                        <div className="flex flex-col gap-2 ml-6">
+                        <div className="flex flex-col gap-2">
                           <Button size="sm" onClick={() => handleViewCertificate(certificate)}>
                             <Eye className="h-4 w-4 mr-2" />
                             Review
@@ -631,7 +690,7 @@ ${certificate.approved_date ? `Approval Date: ${new Date(certificate.approved_da
                           <div className="flex justify-between">
                             <span className="text-gray-600">Status:</span>
                             <Badge className={getStatusColor(selectedCertificate.status)}>
-                              {selectedCertificate.status}
+                              <span className="capitalize">{selectedCertificate.status}</span>
                             </Badge>
                           </div>
                         </CardContent>
@@ -673,6 +732,7 @@ ${certificate.approved_date ? `Approval Date: ${new Date(certificate.approved_da
                             value={teacherComments}
                             onChange={(e) => setTeacherComments(e.target.value)}
                             rows={4}
+                            disabled={processingAction}
                           />
                         </div>
                       </CardContent>
@@ -680,23 +740,41 @@ ${certificate.approved_date ? `Approval Date: ${new Date(certificate.approved_da
 
                     {/* Action Buttons */}
                     <div className="flex justify-end space-x-3 pt-4 border-t">
-                      <Button variant="outline" onClick={() => setShowCertificateDialog(false)}>
+                      <Button 
+                        variant="outline" 
+                        onClick={() => {
+                          setShowCertificateDialog(false)
+                          setTeacherComments("")
+                        }}
+                        disabled={processingAction}
+                      >
                         Cancel
                       </Button>
-                      <Button
-                        variant="destructive"
-                        onClick={() => handleApproveCertificate(selectedCertificate.id, "rejected")}
-                      >
-                        <ThumbsDown className="h-4 w-4 mr-2" />
-                        Reject Certificate
-                      </Button>
-                      <Button
-                        className="bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700"
-                        onClick={() => handleApproveCertificate(selectedCertificate.id, "approved")}
-                      >
-                        <ThumbsUp className="h-4 w-4 mr-2" />
-                        Approve Certificate
-                      </Button>
+                      {selectedCertificate.status === "pending" && (
+                        <>
+                          <Button
+                            variant="destructive"
+                            onClick={() => handleApproveCertificate(selectedCertificate.id, "rejected")}
+                            disabled={processingAction}
+                          >
+                            <ThumbsDown className="h-4 w-4 mr-2" />
+                            {processingAction ? "Processing..." : "Reject Certificate"}
+                          </Button>
+                          <Button
+                            className="bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700"
+                            onClick={() => handleApproveCertificate(selectedCertificate.id, "approved")}
+                            disabled={processingAction}
+                          >
+                            <ThumbsUp className="h-4 w-4 mr-2" />
+                            {processingAction ? "Processing..." : "Approve Certificate"}
+                          </Button>
+                        </>
+                      )}
+                      {selectedCertificate.status !== "pending" && (
+                        <div className="text-sm text-gray-500 py-2">
+                          This certificate has already been {selectedCertificate.status}.
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}

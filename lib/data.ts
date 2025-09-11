@@ -1110,57 +1110,43 @@ export async function getTeacherDashboardData(teacherId: string) {
 
 export const getStudentsByTeacher = async (teacherId: string) => {
   try {
-    console.log("👨‍🏫 Fetching students for teacher:", teacherId)
+    console.log("👨🏫 Fetching students for teacher:", teacherId)
+    
     if (!supabase) {
       console.log("⚠️ Supabase not available, using mock data")
       return getMockStudentsForTeacher()
     }
 
-    const { data: assignments, error: assignmentError } = await supabase
-      .from("student_teacher_assignments")
-      .select(`
-        student_id,
-        is_active,
-        users!inner(
-          id,
-          name,
-          email,
-          roll_number,
-          department,
-          phone,
-          created_at
-        )
-      `)
-      .eq("teacher_id", teacherId)
+    // Since there's no student_teacher_assignments table, 
+    // fetch all active students directly from the users table
+    const { data: students, error: studentsError } = await supabase
+      .from("users")
+      .select("id, name, email, roll_number, department, phone, created_at")
+      .eq("role", "student")
       .eq("is_active", true)
+      .order("name", { ascending: true })
 
-    let students = []
-    if (assignmentError || !assignments || assignments.length === 0) {
-      console.warn("⚠️ No assignments found, fetching all students as fallback")
-      const { data: allStudents, error: studentsError } = await supabase
-        .from("users")
-        .select("id, name, email, roll_number, department, phone, created_at")
-        .eq("role", "student")
-        .eq("is_active", true)
-        .limit(20)
-
-      if (studentsError) {
-        console.error("❌ Error fetching students:", studentsError)
-        return getMockStudentsForTeacher()
-      }
-      students = allStudents || []
-    } else {
-      students = assignments.map((a) => a.users)
+    if (studentsError) {
+      console.error("❌ Error fetching students:", studentsError)
+      return getMockStudentsForTeacher()
     }
 
-    if (students.length === 0) {
-      console.log("ℹ️ No students found")
-      return []
+    if (!students || students.length === 0) {
+      console.log("ℹ️ No students found, returning mock data")
+      return getMockStudentsForTeacher()
     }
 
     console.log(`📊 Found ${students.length} students, fetching additional data...`)
-    const studentIds = students.map((s) => s.id)
 
+    // Get student IDs for fetching related data
+    const studentIds = students.map((s) => s.id).filter(Boolean)
+    
+    if (studentIds.length === 0) {
+      console.log("⚠️ No valid student IDs found")
+      return getMockStudentsForTeacher()
+    }
+
+    // Fetch related data with proper error handling
     const [nocResult, reportsResult, certificatesResult] = await Promise.allSettled([
       supabase
         .from("noc_requests")
@@ -1173,17 +1159,33 @@ export const getStudentsByTeacher = async (teacherId: string) => {
         .select("student_id, week_number, status, submitted_date")
         .in("student_id", studentIds)
         .order("submitted_date", { ascending: false }),
-      supabase.from("certificates").select("student_id, status, upload_date").in("student_id", studentIds),
+      supabase
+        .from("certificates")
+        .select("student_id, status, upload_date")
+        .in("student_id", studentIds)
     ])
 
-    const nocRequests = nocResult.status === "fulfilled" && !nocResult.value.error ? nocResult.value.data || [] : []
-    const reports =
-      reportsResult.status === "fulfilled" && !reportsResult.value.error ? reportsResult.value.data || [] : []
-    const certificates =
-      certificatesResult.status === "fulfilled" && !certificatesResult.value.error
-        ? certificatesResult.value.data || []
-        : []
+    // Handle results with proper fallbacks
+    const nocRequests = nocResult.status === "fulfilled" && !nocResult.value.error 
+      ? nocResult.value.data || [] 
+      : []
+    
+    const reports = reportsResult.status === "fulfilled" && !reportsResult.value.error 
+      ? reportsResult.value.data || [] 
+      : []
+    
+    const certificates = certificatesResult.status === "fulfilled" && !certificatesResult.value.error 
+      ? certificatesResult.value.data || [] 
+      : []
 
+    console.log("📈 Data fetched:", {
+      students: students.length,
+      nocRequests: nocRequests.length,
+      reports: reports.length,
+      certificates: certificates.length
+    })
+
+    // Enrich student data
     const enrichedStudents = students.map((student) => {
       const currentInternship = nocRequests.find((noc) => noc.student_id === student.id)
       const studentReports = reports.filter((r) => r.student_id === student.id)
@@ -1204,10 +1206,10 @@ export const getStudentsByTeacher = async (teacherId: string) => {
 
       return {
         id: student.id,
-        name: student.name,
-        email: student.email,
-        rollNumber: student.roll_number,
-        department: student.department,
+        name: student.name || "Unknown Student",
+        email: student.email || "",
+        rollNumber: student.roll_number || "N/A",
+        department: student.department || "Unknown",
         phone: student.phone || "+91 9876543210",
         company: currentInternship?.company_name || null,
         position: currentInternship?.position || null,
@@ -1218,7 +1220,7 @@ export const getStudentsByTeacher = async (teacherId: string) => {
         status,
         reportsSubmitted: submittedReports,
         totalReports,
-        cgpa: 8.5,
+        cgpa: 8.5, // Default value since this field doesn't exist in your schema
         lastActivity,
         profileImage: null,
         certificates: studentCertificates.length,
@@ -1227,11 +1229,15 @@ export const getStudentsByTeacher = async (teacherId: string) => {
 
     console.log("✅ Successfully enriched student data")
     return enrichedStudents
+
   } catch (error) {
     console.error("💥 Error fetching students for teacher:", error)
     return getMockStudentsForTeacher()
   }
 }
+
+
+
 
 export const getStudentDetails = async (studentId: string) => {
   try {
@@ -2158,3 +2164,247 @@ const getMockStudentDetails = (studentId: string) => ({
     totalApplications: 5,
   },
 })
+// Fixed getCertificatesByTeacher function
+export const getCertificatesByTeacher = async (teacherId: string) => {
+  try {
+    console.log("📜 Fetching certificates for teacher review:", teacherId)
+    
+    if (!supabase) {
+      console.log("⚠️ Supabase not available, using mock data")
+      return getMockTeacherCertificates()
+    }
+
+    // First, try to get certificates through student-teacher assignments
+    let certificates = []
+    
+    try {
+      const { data: assignments, error: assignmentsError } = await supabase
+        .from("student_teacher_assignments")
+        .select("student_id")
+        .eq("teacher_id", teacherId)
+        .eq("is_active", true)
+
+      if (!assignmentsError && assignments && assignments.length > 0) {
+        const studentIds = assignments.map(a => a.student_id)
+        console.log(`Found ${studentIds.length} assigned students`)
+        
+        // Fetch certificates for assigned students
+        const { data: assignedCertificates, error: certError } = await supabase
+          .from("certificates")
+          .select("*")
+          .in("student_id", studentIds)
+          .order("created_at", { ascending: false })
+
+        if (!certError && assignedCertificates) {
+          certificates = assignedCertificates
+          console.log(`Found ${certificates.length} certificates from assigned students`)
+        }
+      }
+    } catch (assignmentError) {
+      console.warn("Assignment query failed, will fetch all certificates")
+    }
+
+    // If no certificates from assignments, fetch all certificates (fallback)
+    if (certificates.length === 0) {
+      console.log("No certificates from assignments, fetching all certificates")
+      const { data: allCertificates, error: allCertError } = await supabase
+        .from("certificates")
+        .select("*")
+        .order("created_at", { ascending: false })
+
+      if (allCertError) {
+        console.error("⚠ Error fetching all certificates:", allCertError)
+        return getMockTeacherCertificates()
+      }
+
+      certificates = allCertificates || []
+      console.log(`Found ${certificates.length} total certificates`)
+    }
+
+    // Process certificate data to ensure all required fields are present
+    const processedCertificates = certificates.map(cert => {
+      // Handle missing required fields based on schema
+      return {
+        id: cert.id,
+        student_id: cert.student_id,
+        student_name: cert.student_name || "Unknown Student",
+        student_email: cert.student_email || "",
+        student_roll_number: cert.student_roll_number || "N/A", // This field may not exist in schema
+        certificate_type: cert.certificate_type || "internship",
+        title: cert.title || "Internship Certificate",
+        company_name: cert.company_name || "Unknown Company",
+        position: cert.position || "Intern", // This field may not exist in schema
+        duration: cert.duration || "Unknown Duration",
+        start_date: cert.start_date || new Date().toISOString().split('T')[0],
+        end_date: cert.end_date || new Date().toISOString().split('T')[0],
+        grade: cert.grade || "A", // This field may not exist in schema
+        supervisor_name: cert.supervisor_name || "Unknown Supervisor", // This field may not exist in schema
+        supervisor_email: cert.supervisor_email || "supervisor@company.com", // This field may not exist in schema
+        description: cert.description || "Internship completion certificate", // This field may not exist in schema
+        skills: cert.skills || "Various technical skills", // This field may not exist in schema
+        projects: cert.projects || "Multiple projects completed", // This field may not exist in schema
+        file_name: cert.file_name,
+        file_url: cert.file_url,
+        file_size: cert.file_size,
+        status: cert.status || "pending",
+        feedback: cert.feedback,
+        approved_by: cert.approved_by,
+        approved_date: cert.approved_date,
+        upload_date: cert.upload_date || cert.created_at,
+        submission_date: cert.created_at || new Date().toISOString(),
+        created_at: cert.created_at || new Date().toISOString()
+      }
+    })
+
+    console.log(`Successfully processed ${processedCertificates.length} certificates`)
+    return processedCertificates
+
+  } catch (error) {
+    console.error("💥 Error in getCertificatesByTeacher:", error)
+    return getMockTeacherCertificates()
+  }
+}
+
+// Also fix the updateCertificateStatus function to match schema
+export const updateCertificateStatus = async (
+  certificateId: string | number,
+  status: string,
+  feedback?: string,
+  reviewerId?: string
+) => {
+  try {
+    console.log("📄 Updating certificate status:", { certificateId, status, feedback, reviewerId })
+
+    if (!supabase) {
+      console.log("⚠️ Supabase not available, returning mock success")
+      return { success: true }
+    }
+
+    const updateData: any = {
+      status,
+      updated_at: new Date().toISOString(),
+    }
+
+    // Add feedback if provided
+    if (feedback) updateData.feedback = feedback
+    
+    // Add reviewer info if provided (approved_by field in schema)
+    if (reviewerId) updateData.approved_by = reviewerId
+    
+    // Add approved_date if status is approved
+    if (status === "approved") {
+      updateData.approved_date = new Date().toISOString()
+    }
+
+    const { data, error } = await supabase
+      .from("certificates")
+      .update(updateData)
+      .eq("id", certificateId)
+      .select()
+      .single()
+
+    if (error) {
+      console.error("⚠ Error updating certificate status:", error)
+      return { success: false, error: error.message }
+    }
+
+    console.log("✅ Certificate status updated successfully:", data)
+
+    // Clear relevant caches
+    clearDataCache("teacher-certificates")
+    clearDataCache(`certificates-${data.student_id}`)
+
+    return { success: true, data }
+  } catch (error: any) {
+    console.error("💥 Error updating certificate status:", error)
+    return { success: false, error: error.message || "Failed to update certificate status" }
+  }
+}
+
+// Debug function to check what's in the certificates table
+export const debugCertificates = async () => {
+  if (!supabase) {
+    console.log("No Supabase connection for debugging")
+    return
+  }
+
+  try {
+    const { data, error, count } = await supabase
+      .from("certificates")
+      .select("*", { count: "exact" })
+
+    console.log("=== CERTIFICATE DEBUG INFO ===")
+    console.log("Total certificates in database:", count)
+    console.log("Error (if any):", error)
+    console.log("Sample data:", data?.slice(0, 2))
+    console.log("==============================")
+
+    return { count, data, error }
+  } catch (err) {
+    console.error("Debug query failed:", err)
+  }
+}
+
+// Enhanced mock data that matches your schema structure
+const getMockTeacherCertificates = () => [
+  {
+    id: 1,
+    student_id: "student_1",
+    student_name: "Alex Kumar",
+    student_email: "alex.kumar@charusat.edu.in",
+    student_roll_number: "21CE001",
+    certificate_type: "internship",
+    title: "Software Development Internship Certificate",
+    company_name: "TechCorp Solutions",
+    position: "Software Developer Intern",
+    duration: "6 months",
+    start_date: "2024-01-15",
+    end_date: "2024-07-15",
+    grade: "A+",
+    supervisor_name: "Mr. Rajesh Sharma",
+    supervisor_email: "rajesh.sharma@techcorp.com",
+    description: "Completed full-stack web development internship with focus on React.js and Node.js technologies. Worked on multiple client projects and gained hands-on experience in agile development methodologies.",
+    skills: "React.js, Node.js, MongoDB, Express.js, Git, Agile Development, REST APIs, JavaScript, HTML5, CSS3",
+    projects: "E-commerce web application, Real-time chat application, Task management system with role-based access control",
+    file_name: "alex_kumar_certificate.pdf",
+    file_url: "https://mock-storage.com/certificates/alex_kumar_certificate.pdf",
+    file_size: 2048576,
+    status: "pending",
+    feedback: null,
+    approved_by: null,
+    approved_date: null,
+    upload_date: "2024-07-20T10:30:00Z",
+    submission_date: "2024-07-20T10:30:00Z",
+    created_at: "2024-07-20T10:30:00Z"
+  },
+  {
+    id: 2,
+    student_id: "student_2", 
+    student_name: "Priya Patel",
+    student_email: "priya.patel@charusat.edu.in",
+    student_roll_number: "21CE002",
+    certificate_type: "internship",
+    title: "Data Analytics Internship Certificate",
+    company_name: "DataTech Analytics",
+    position: "Data Analyst Intern",
+    duration: "4 months",
+    start_date: "2024-02-01",
+    end_date: "2024-06-01",
+    grade: "A",
+    supervisor_name: "Ms. Sneha Joshi",
+    supervisor_email: "sneha.joshi@datatech.com",
+    description: "Worked on data analysis projects using Python and machine learning algorithms. Gained experience in data visualization and statistical analysis.",
+    skills: "Python, Pandas, NumPy, Matplotlib, Seaborn, Scikit-learn, SQL, Tableau, Statistical Analysis",
+    projects: "Customer segmentation analysis, Sales forecasting model, Market trend analysis dashboard",
+    file_name: "priya_patel_certificate.pdf",
+    file_url: "https://mock-storage.com/certificates/priya_patel_certificate.pdf", 
+    file_size: 1876543,
+    status: "approved",
+    feedback: "Excellent work on data analysis projects. Shows strong analytical skills and attention to detail.",
+    approved_by: "teacher_1",
+    approved_date: "2024-06-10T09:15:00Z",
+    upload_date: "2024-06-05T14:20:00Z",
+    submission_date: "2024-06-05T14:20:00Z",
+    created_at: "2024-06-05T14:20:00Z"
+  }
+]

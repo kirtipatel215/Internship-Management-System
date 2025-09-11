@@ -1,4 +1,5 @@
-// lib/noc-generator.ts
+// lib/noc-generator.ts - Enhanced NOC Certificate Generator
+
 import html2canvas from 'html2canvas'
 import jsPDF from 'jspdf'
 
@@ -7,9 +8,8 @@ export interface NOCCertificateData {
     name: string
     email: string
     id: string
-    course?: string
-    year?: string
     rollNumber?: string
+    department?: string
   }
   internship: {
     company: string
@@ -33,20 +33,140 @@ export const generateNOCCertificateNumber = (): string => {
   const month = String(new Date().getMonth() + 1).padStart(2, '0')
   const day = String(new Date().getDate()).padStart(2, '0')
   const random = Math.floor(Math.random() * 1000).toString().padStart(3, '0')
-  return `NOC/${year}/${month}/${day}/${random}`
+  return `CHARUSAT/NOC/${year}/${month}${day}/${random}`
 }
 
-export const downloadNOCAsPDF = async (
-  elementId: string = 'noc-certificate',
-  filename?: string
-): Promise<void> => {
+export const generateNOCHTML = (data: NOCCertificateData): string => {
+  return `
+    <div id="noc-certificate" style="
+      width: 800px;
+      min-height: 1100px;
+      margin: 0 auto;
+      padding: 60px;
+      background: white;
+      font-family: 'Times New Roman', serif;
+      color: #333;
+      line-height: 1.6;
+      box-shadow: 0 0 20px rgba(0,0,0,0.1);
+    ">
+      <!-- Header -->
+      <div style="text-align: center; margin-bottom: 40px; border-bottom: 3px solid #1e40af; padding-bottom: 30px;">
+        <h1 style="color: #1e40af; font-size: 32px; margin: 0; font-weight: bold;">
+          CHARUSAT UNIVERSITY
+        </h1>
+        <p style="color: #666; font-size: 16px; margin: 10px 0 0 0;">
+          Charotar University of Science and Technology
+        </p>
+        <p style="color: #666; font-size: 14px; margin: 5px 0 0 0;">
+          CHARUSAT Campus, Changa - 388421, Gujarat, India
+        </p>
+      </div>
+
+      <!-- Certificate Title -->
+      <div style="text-align: center; margin: 40px 0;">
+        <h2 style="
+          color: #dc2626; 
+          font-size: 28px; 
+          margin: 0; 
+          text-decoration: underline;
+          font-weight: bold;
+        ">
+          NO OBJECTION CERTIFICATE
+        </h2>
+        <p style="color: #666; font-size: 16px; margin-top: 10px;">
+          Certificate No: ${data.approval.certificateNumber}
+        </p>
+      </div>
+
+      <!-- Certificate Body -->
+      <div style="margin: 40px 0; text-align: justify; font-size: 16px;">
+        <p style="margin-bottom: 25px;">
+          <strong>Date:</strong> ${new Date(data.approval.approvedDate).toLocaleDateString('en-IN', {
+            day: 'numeric',
+            month: 'long', 
+            year: 'numeric'
+          })}
+        </p>
+
+        <p style="margin-bottom: 25px; font-size: 18px;">
+          <strong>To Whom It May Concern,</strong>
+        </p>
+
+        <p style="margin-bottom: 25px;">
+          This is to certify that <strong>${data.student.name}</strong> 
+          (Roll Number: <strong>${data.student.rollNumber || 'N/A'}</strong>), 
+          a student of <strong>${data.student.department || 'Computer Engineering'}</strong> 
+          at Charusat University, has been granted permission to undertake an internship with:
+        </p>
+
+        <div style="background: #f8fafc; padding: 20px; border-left: 4px solid #1e40af; margin: 25px 0;">
+          <p style="margin: 5px 0;"><strong>Company:</strong> ${data.internship.company}</p>
+          <p style="margin: 5px 0;"><strong>Position:</strong> ${data.internship.position}</p>
+          <p style="margin: 5px 0;"><strong>Duration:</strong> ${data.internship.duration}</p>
+          <p style="margin: 5px 0;"><strong>Period:</strong> ${new Date(data.internship.startDate).toLocaleDateString('en-IN')} to ${new Date(data.internship.endDate).toLocaleDateString('en-IN')}</p>
+        </div>
+
+        <p style="margin-bottom: 25px;">
+          The university has <strong>no objection</strong> to the student undertaking this internship 
+          as part of their academic curriculum. This internship has been approved by both the 
+          Training & Placement Office and the Academic Department.
+        </p>
+
+        <p style="margin-bottom: 25px;">
+          We request the concerned organization to provide necessary cooperation and guidance 
+          to the student during the internship period.
+        </p>
+
+        <p style="margin-bottom: 40px;">
+          This certificate is issued for official purposes and is valid for the mentioned period only.
+        </p>
+      </div>
+
+      <!-- Signatures -->
+      <div style="display: flex; justify-content: space-between; margin-top: 60px;">
+        <div style="text-align: center; width: 200px;">
+          <div style="border-bottom: 1px solid #333; height: 60px; margin-bottom: 10px;"></div>
+          <p style="margin: 0; font-weight: bold;">Training & Placement Officer</p>
+          <p style="margin: 5px 0 0 0; font-size: 14px;">Charusat University</p>
+        </div>
+
+        <div style="text-align: center; width: 200px;">
+          <div style="border-bottom: 1px solid #333; height: 60px; margin-bottom: 10px;"></div>
+          <p style="margin: 0; font-weight: bold;">Academic Supervisor</p>
+          <p style="margin: 5px 0 0 0; font-size: 14px;">${data.student.department || 'Department'}</p>
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <div style="text-align: center; margin-top: 50px; padding-top: 30px; border-top: 2px solid #e5e7eb; font-size: 12px; color: #666;">
+        <p>This is a computer-generated certificate. For verification, contact: placement@charusat.edu.in</p>
+        <p>Generated on: ${new Date().toLocaleString('en-IN')}</p>
+      </div>
+    </div>
+  `
+}
+
+export const generateAndDownloadNOCPDF = async (data: NOCCertificateData): Promise<{
+  success: boolean
+  pdfBlob?: Blob
+  fileName?: string
+  error?: string
+}> => {
   try {
-    const element = document.getElementById(elementId)
+    // Create a temporary container for the HTML
+    const container = document.createElement('div')
+    container.innerHTML = generateNOCHTML(data)
+    container.style.position = 'absolute'
+    container.style.left = '-9999px'
+    container.style.top = '0'
+    document.body.appendChild(container)
+
+    const element = container.querySelector('#noc-certificate') as HTMLElement
     if (!element) {
       throw new Error('NOC certificate element not found')
     }
 
-    // Create canvas from the element
+    // Generate canvas
     const canvas = await html2canvas(element, {
       scale: 2,
       useCORS: true,
@@ -63,12 +183,11 @@ export const downloadNOCAsPDF = async (
       format: 'a4',
     })
 
-    // Calculate dimensions to fit A4
-    const imgWidth = 210 // A4 width in mm
-    const pageHeight = 295 // A4 height in mm
+    // Calculate dimensions
+    const imgWidth = 210 // A4 width
+    const pageHeight = 297 // A4 height
     const imgHeight = (canvas.height * imgWidth) / canvas.width
     let heightLeft = imgHeight
-
     let position = 0
 
     // Add image to PDF
@@ -83,182 +202,24 @@ export const downloadNOCAsPDF = async (
       heightLeft -= pageHeight
     }
 
-    // Download the PDF
-    const defaultFilename = `NOC_Certificate_${new Date().toISOString().split('T')[0]}.pdf`
-    pdf.save(filename || defaultFilename)
+    // Clean up
+    document.body.removeChild(container)
+
+    // Convert to blob
+    const pdfBlob = pdf.output('blob')
+    const fileName = `NOC_${data.student.name.replace(/\s+/g, '_')}_${data.internship.company.replace(/\s+/g, '_')}_${data.approval.certificateNumber?.replace(/\//g, '_')}.pdf`
+
+    return {
+      success: true,
+      pdfBlob,
+      fileName
+    }
+
   } catch (error) {
-    console.error('Error generating PDF:', error)
-    throw new Error('Failed to generate PDF certificate')
-  }
-}
-
-export const printNOCCertificate = (): void => {
-  const printWindow = window.open('', '_blank')
-  if (!printWindow) {
-    throw new Error('Unable to open print window')
-  }
-
-  const certificateElement = document.getElementById('noc-certificate')
-  if (!certificateElement) {
-    throw new Error('NOC certificate element not found')
-  }
-
-  // Create print-friendly HTML
-  const printHTML = `
-    <!DOCTYPE html>
-    <html>
-      <head>
-        <title>NOC Certificate - Print</title>
-        <style>
-          @page {
-            margin: 0.5in;
-            size: A4;
-          }
-          
-          body {
-            font-family: Arial, sans-serif;
-            margin: 0;
-            padding: 20px;
-            background: white;
-          }
-          
-          .certificate-container {
-            max-width: 100%;
-            margin: 0 auto;
-            background: white;
-          }
-          
-          /* Copy existing styles */
-          ${getComputedStylesAsString(certificateElement)}
-        </style>
-      </head>
-      <body>
-        <div class="certificate-container">
-          ${certificateElement.outerHTML}
-        </div>
-        <script>
-          window.onload = function() {
-            window.print();
-            window.onafterprint = function() {
-              window.close();
-            };
-          };
-        </script>
-      </body>
-    </html>
-  `
-
-  printWindow.document.write(printHTML)
-  printWindow.document.close()
-}
-
-const getComputedStylesAsString = (element: Element): string => {
-  const computedStyles = window.getComputedStyle(element)
-  let cssText = ''
-  
-  for (let i = 0; i < computedStyles.length; i++) {
-    const property = computedStyles[i]
-    const value = computedStyles.getPropertyValue(property)
-    cssText += `${property}: ${value}; `
-  }
-  
-  return `
-    .certificate-container * {
-      ${cssText}
+    console.error('Error generating NOC PDF:', error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to generate PDF'
     }
-  `
-}
-
-export const validateNOCData = (data: NOCCertificateData): string[] => {
-  const errors: string[] = []
-
-  // Student validation
-  if (!data.student.name?.trim()) {
-    errors.push('Student name is required')
-  }
-  if (!data.student.email?.trim()) {
-    errors.push('Student email is required')
-  }
-  if (!data.student.id?.trim()) {
-    errors.push('Student ID is required')
-  }
-
-  // Internship validation
-  if (!data.internship.company?.trim()) {
-    errors.push('Company name is required')
-  }
-  if (!data.internship.position?.trim()) {
-    errors.push('Position is required')
-  }
-  if (!data.internship.startDate) {
-    errors.push('Start date is required')
-  }
-  if (!data.internship.endDate) {
-    errors.push('End date is required')
-  }
-
-  // Date validation
-  if (data.internship.startDate && data.internship.endDate) {
-    const startDate = new Date(data.internship.startDate)
-    const endDate = new Date(data.internship.endDate)
-    
-    if (endDate <= startDate) {
-      errors.push('End date must be after start date')
-    }
-  }
-
-  // Approval validation
-  if (!data.approval.approvedDate) {
-    errors.push('Approval date is required')
-  }
-  if (!data.approval.approvedBy?.trim()) {
-    errors.push('Approving authority is required')
-  }
-
-  return errors
-}
-
-export const formatNOCDate = (dateString: string): string => {
-  try {
-    return new Date(dateString).toLocaleDateString('en-IN', {
-      day: 'numeric',
-      month: 'long',
-      year: 'numeric'
-    })
-  } catch (error) {
-    return dateString
-  }
-}
-
-export const calculateInternshipDuration = (startDate: string, endDate: string): string => {
-  try {
-    const start = new Date(startDate)
-    const end = new Date(endDate)
-    const diffTime = Math.abs(end.getTime() - start.getTime())
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
-    
-    if (diffDays < 30) {
-      return `${diffDays} days`
-    }
-    
-    const diffMonths = Math.ceil(diffDays / 30)
-    if (diffMonths === 1) {
-      return '1 month'
-    }
-    
-    if (diffMonths < 12) {
-      return `${diffMonths} months`
-    }
-    
-    const years = Math.floor(diffMonths / 12)
-    const remainingMonths = diffMonths % 12
-    
-    if (remainingMonths === 0) {
-      return `${years} year${years > 1 ? 's' : ''}`
-    }
-    
-    return `${years} year${years > 1 ? 's' : ''} ${remainingMonths} month${remainingMonths > 1 ? 's' : ''}`
-  } catch (error) {
-    return 'Duration not specified'
   }
 }
