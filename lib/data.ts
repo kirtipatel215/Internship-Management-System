@@ -403,6 +403,7 @@ export const getReportsByStudent = async (studentId: string): Promise<any[]> => 
   }
 }
 
+
 export const createWeeklyReport = async (reportData: any, file?: File) => {
   try {
     if (!reportData.studentId) {
@@ -489,6 +490,77 @@ export const createWeeklyReport = async (reportData: any, file?: File) => {
     throw new Error(error.message || "Failed to create weekly report")
   }
 }
+export const getApprovedInternshipsByStudentDirect = async (studentId: string) => {
+  try {
+    console.log("[v0] Fetching approved internships directly for student:", studentId)
+
+    if (!supabase) {
+      // Mock data for development
+      return [
+        {
+          id: 1,
+          student_id: studentId,
+          company_name: "Google Inc.",
+          internship_title: "Software Engineering Intern",
+          position: "Software Engineering Intern",
+          start_date: "2024-06-01",
+          end_date: "2024-08-31",
+          duration: "3 months",
+          status: "approved" as const,
+          approved_date: "2024-05-15",
+          approved_by: "Dr. John Smith"
+        }
+      ]
+    }
+
+    const { data, error } = await supabase
+      .from("noc_requests")
+      .select(`
+        id,
+        student_id,
+        company_name,
+        position,
+        start_date,
+        end_date,
+        duration,
+        status,
+        approved_date,
+        teacher_approved_date,
+        approved_by,
+        teacher_approved_by
+      `)
+      .eq("student_id", studentId)
+      .eq("status", "approved")
+      .order("approved_date", { ascending: false })
+
+    if (error) {
+      console.error("[v0] Error fetching approved internships:", error)
+      return []
+    }
+
+    // Transform data to match expected interface
+    const transformedData = (data || []).map((noc) => ({
+      id: noc.id,
+      student_id: noc.student_id,
+      company_name: noc.company_name,
+      internship_title: noc.position,
+      position: noc.position,
+      start_date: noc.start_date,
+      end_date: noc.end_date,
+      duration: noc.duration || calculateDuration(noc.start_date, noc.end_date),
+      status: "approved" as const,
+      approved_date: noc.approved_date || noc.teacher_approved_date,
+      approved_by: noc.approved_by || noc.teacher_approved_by
+    }))
+
+    console.log(`[v0] Successfully fetched ${transformedData.length} approved internships`)
+    return transformedData
+
+  } catch (error) {
+    console.error("[v0] Error in getApprovedInternshipsByStudentDirect:", error)
+    return []
+  }
+}
 
 // ===================
 // CERTIFICATES - FIXED WITH SCHEMA ALIGNMENT
@@ -573,6 +645,41 @@ export const createCertificate = async (certificateData: any) => {
   } catch (error: any) {
     console.error("[v0] Error creating certificate:", error)
     throw new Error(error.message || "Failed to create certificate")
+  }
+}
+export const getApprovedInternshipsByStudent = async (studentId: string) => {
+  try {
+    console.log("[v0] Fetching approved internships for student:", studentId)
+
+    // Use your existing getAllNOCRequests function
+    const allNOCRequests = await getAllNOCRequests()
+    
+    // Filter for approved NOCs belonging to current user
+    const userApprovedInternships = allNOCRequests
+      .filter((noc: any) => 
+        noc.student_id === studentId && 
+        noc.status === 'approved'
+      )
+      .map((noc: any) => ({
+        id: noc.id,
+        student_id: noc.student_id,
+        company_name: noc.company_name,
+        internship_title: noc.position, // Using position as internship title
+        position: noc.position,
+        start_date: noc.start_date,
+        end_date: noc.end_date,
+        duration: noc.duration || calculateDuration(noc.start_date, noc.end_date),
+        status: 'approved' as const,
+        approved_date: noc.approved_date || noc.teacher_approved_date,
+        approved_by: noc.approved_by || noc.teacher_approved_by
+      }))
+
+    console.log(`[v0] Found ${userApprovedInternships.length} approved internships for student`)
+    return userApprovedInternships
+
+  } catch (error) {
+    console.error("[v0] Error fetching approved internships:", error)
+    return []
   }
 }
 

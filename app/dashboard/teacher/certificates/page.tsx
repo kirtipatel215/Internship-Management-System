@@ -10,6 +10,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
+import { Separator } from "@/components/ui/separator"
+import { ScrollArea } from "@/components/ui/scroll-area"
 import {
   Search,
   Filter,
@@ -27,6 +29,13 @@ import {
   ThumbsUp,
   ThumbsDown,
   RefreshCw,
+  FileText,
+  Star,
+  Briefcase,
+  GraduationCap,
+  Mail,
+  Phone,
+  MapPin,
 } from "lucide-react"
 import { useState, useEffect } from "react"
 import { getCurrentUser, getCertificatesByTeacher, updateCertificateStatus } from "@/lib/data"
@@ -54,6 +63,9 @@ interface Certificate {
   status: "pending" | "approved" | "rejected"
   feedback?: string
   approved_date?: string
+  file_name?: string
+  file_url?: string
+  file_size?: number
   created_at: string
 }
 
@@ -75,6 +87,7 @@ export default function TeacherCertificatesPage() {
   const [gradeFilter, setGradeFilter] = useState("all")
   const [selectedCertificate, setSelectedCertificate] = useState<Certificate | null>(null)
   const [showCertificateDialog, setShowCertificateDialog] = useState(false)
+  const [showFullCertificateDialog, setShowFullCertificateDialog] = useState(false)
   const [teacherComments, setTeacherComments] = useState("")
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
@@ -202,6 +215,11 @@ export default function TeacherCertificatesPage() {
     setShowCertificateDialog(true)
   }
 
+  const handleViewFullCertificate = (certificate: Certificate) => {
+    setSelectedCertificate(certificate)
+    setShowFullCertificateDialog(true)
+  }
+
   const handleApproveCertificate = async (certificateId: number, action: "approved" | "rejected") => {
     if (!user) return
 
@@ -246,43 +264,91 @@ export default function TeacherCertificatesPage() {
   }
 
   const handleDownloadCertificate = (certificate: Certificate) => {
-    // Create a mock certificate content
+    // Create a comprehensive certificate content
     const certificateContent = `
+CHARUSAT UNIVERSITY
 INTERNSHIP COMPLETION CERTIFICATE
+
+═══════════════════════════════════════
 
 This is to certify that
 
-${certificate.student_name}
+${certificate.student_name.toUpperCase()}
 Roll Number: ${certificate.student_roll_number}
+Email: ${certificate.student_email}
 
 has successfully completed the internship program at
 
-${certificate.company_name}
+${certificate.company_name.toUpperCase()}
+
 Position: ${certificate.position}
 Duration: ${certificate.duration}
-Period: ${new Date(certificate.start_date).toLocaleDateString()} to ${new Date(certificate.end_date).toLocaleDateString()}
+Period: ${new Date(certificate.start_date).toLocaleDateString('en-US', { 
+  year: 'numeric', 
+  month: 'long', 
+  day: 'numeric' 
+})} to ${new Date(certificate.end_date).toLocaleDateString('en-US', { 
+  year: 'numeric', 
+  month: 'long', 
+  day: 'numeric' 
+})}
 
-Grade Achieved: ${certificate.grade}
+GRADE ACHIEVED: ${certificate.grade}
 
-Supervisor: ${certificate.supervisor_name}
+═══════════════════════════════════════
+
+SUPERVISOR DETAILS:
+Name: ${certificate.supervisor_name}
 Email: ${certificate.supervisor_email}
 
-Description:
+INTERNSHIP DESCRIPTION:
 ${certificate.description}
 
-Skills Acquired:
+SKILLS ACQUIRED:
 ${certificate.skills}
 
-Projects Completed:
+PROJECTS COMPLETED:
 ${certificate.projects}
 
-${certificate.feedback ? `Teacher Comments: ${certificate.feedback}` : ""}
+═══════════════════════════════════════
 
-Submission Date: ${new Date(certificate.submission_date).toLocaleDateString()}
-${certificate.approved_date ? `Approval Date: ${new Date(certificate.approved_date).toLocaleDateString()}` : ""}
+${certificate.feedback ? `TEACHER EVALUATION:
+${certificate.feedback}
+
+` : ''}SUBMISSION DETAILS:
+Submission Date: ${new Date(certificate.submission_date).toLocaleDateString('en-US', { 
+  year: 'numeric', 
+  month: 'long', 
+  day: 'numeric' 
+})}
+${certificate.approved_date ? `Approval Date: ${new Date(certificate.approved_date).toLocaleDateString('en-US', { 
+  year: 'numeric', 
+  month: 'long', 
+  day: 'numeric' 
+})}` : ''}
+Status: ${certificate.status.toUpperCase()}
+
+═══════════════════════════════════════
+
+This certificate is issued by Charusat University
+Training & Placement Office
+
+Date of Issue: ${new Date().toLocaleDateString('en-US', { 
+  year: 'numeric', 
+  month: 'long', 
+  day: 'numeric' 
+})}
+
+Authorized by: ${user?.name || 'Academic Department'}
+Designation: ${user?.role?.toUpperCase() || 'FACULTY MEMBER'}
+
+═══════════════════════════════════════
+
+Note: This is a system-generated certificate.
+For verification, please contact training@charusat.edu.in
     `
 
-    const blob = new Blob([certificateContent], { type: "text/plain" })
+    const blob = new Blob([certificateContent], { type: "text/plain; charset=utf-8" })
     const url = window.URL.createObjectURL(blob)
     const a = document.createElement("a")
     a.href = url
@@ -590,6 +656,10 @@ ${certificate.approved_date ? `Approval Date: ${new Date(certificate.approved_da
                         </div>
 
                         <div className="flex flex-col gap-2">
+                          <Button size="sm" onClick={() => handleViewFullCertificate(certificate)}>
+                            <FileText className="h-4 w-4 mr-2" />
+                            View Certificate
+                          </Button>
                           <Button size="sm" onClick={() => handleViewCertificate(certificate)}>
                             <Eye className="h-4 w-4 mr-2" />
                             Review
@@ -605,6 +675,282 @@ ${certificate.approved_date ? `Approval Date: ${new Date(certificate.approved_da
                 ))
               )}
             </div>
+
+            {/* Full Certificate View Dialog */}
+            <Dialog open={showFullCertificateDialog} onOpenChange={setShowFullCertificateDialog}>
+              <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+                <DialogHeader>
+                  <DialogTitle className="flex items-center gap-3">
+                    <Award className="h-6 w-6 text-purple-600" />
+                    Certificate Preview: {selectedCertificate?.student_name}
+                  </DialogTitle>
+                  <DialogDescription>
+                    Full certificate details for {selectedCertificate?.title}
+                  </DialogDescription>
+                </DialogHeader>
+                
+                {selectedCertificate && (
+                  <ScrollArea className="flex-1 pr-4">
+                    <div className="space-y-6 pb-6">
+                      {/* Certificate Header */}
+                      <div className="text-center border-b pb-6">
+                        <div className="w-16 h-16 bg-gradient-to-br from-purple-500 to-indigo-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                          <GraduationCap className="h-8 w-8 text-white" />
+                        </div>
+                        <h2 className="text-2xl font-bold text-gray-900 mb-2">
+                          CHARUSAT UNIVERSITY
+                        </h2>
+                        <p className="text-lg text-gray-600 mb-4">Internship Completion Certificate</p>
+                        <Badge className={getStatusColor(selectedCertificate.status)} variant="outline" className="text-sm px-3 py-1">
+                          {getStatusIcon(selectedCertificate.status)}
+                          <span className="ml-1 capitalize">{selectedCertificate.status}</span>
+                        </Badge>
+                      </div>
+
+                      {/* Student Information */}
+                      <Card className="border-l-4 border-l-purple-500">
+                        <CardHeader>
+                          <CardTitle className="text-lg flex items-center gap-2">
+                            <User className="h-5 w-5 text-purple-600" />
+                            Student Information
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="space-y-3">
+                              <div>
+                                <Label className="text-sm font-semibold text-gray-600">Full Name</Label>
+                                <p className="text-lg font-medium text-gray-900">{selectedCertificate.student_name}</p>
+                              </div>
+                              <div>
+                                <Label className="text-sm font-semibold text-gray-600">Roll Number</Label>
+                                <p className="text-base text-gray-700">{selectedCertificate.student_roll_number}</p>
+                              </div>
+                              <div>
+                                <Label className="text-sm font-semibold text-gray-600">Email Address</Label>
+                                <p className="text-base text-gray-700 flex items-center gap-1">
+                                  <Mail className="h-4 w-4" />
+                                  {selectedCertificate.student_email}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="space-y-3">
+                              <div>
+                                <Label className="text-sm font-semibold text-gray-600">Certificate Title</Label>
+                                <p className="text-lg font-medium text-gray-900">{selectedCertificate.title}</p>
+                              </div>
+                              <div>
+                                <Label className="text-sm font-semibold text-gray-600">Grade Achieved</Label>
+                                <Badge className={`${getGradeColor(selectedCertificate.grade)} text-base px-3 py-1`}>
+                                  <Star className="h-4 w-4 mr-1" />
+                                  Grade {selectedCertificate.grade}
+                                </Badge>
+                              </div>
+                              <div>
+                                <Label className="text-sm font-semibold text-gray-600">Submission Date</Label>
+                                <p className="text-base text-gray-700">
+                                  {new Date(selectedCertificate.submission_date).toLocaleDateString('en-US', { 
+                                    year: 'numeric', 
+                                    month: 'long', 
+                                    day: 'numeric' 
+                                  })}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+
+                      {/* Company & Internship Details */}
+                      <Card className="border-l-4 border-l-blue-500">
+                        <CardHeader>
+                          <CardTitle className="text-lg flex items-center gap-2">
+                            <Briefcase className="h-5 w-5 text-blue-600" />
+                            Internship Details
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div className="space-y-4">
+                              <div>
+                                <Label className="text-sm font-semibold text-gray-600">Company Name</Label>
+                                <p className="text-lg font-medium text-gray-900 flex items-center gap-2">
+                                  <Building className="h-4 w-4" />
+                                  {selectedCertificate.company_name}
+                                </p>
+                              </div>
+                              <div>
+                                <Label className="text-sm font-semibold text-gray-600">Position</Label>
+                                <p className="text-base text-gray-700">{selectedCertificate.position}</p>
+                              </div>
+                              <div>
+                                <Label className="text-sm font-semibold text-gray-600">Duration</Label>
+                                <p className="text-base text-gray-700 flex items-center gap-1">
+                                  <Clock className="h-4 w-4" />
+                                  {selectedCertificate.duration}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="space-y-4">
+                              <div>
+                                <Label className="text-sm font-semibold text-gray-600">Start Date</Label>
+                                <p className="text-base text-gray-700">
+                                  {new Date(selectedCertificate.start_date).toLocaleDateString('en-US', { 
+                                    year: 'numeric', 
+                                    month: 'long', 
+                                    day: 'numeric' 
+                                  })}
+                                </p>
+                              </div>
+                              <div>
+                                <Label className="text-sm font-semibold text-gray-600">End Date</Label>
+                                <p className="text-base text-gray-700">
+                                  {new Date(selectedCertificate.end_date).toLocaleDateString('en-US', { 
+                                    year: 'numeric', 
+                                    month: 'long', 
+                                    day: 'numeric' 
+                                  })}
+                                </p>
+                              </div>
+                              <div>
+                                <Label className="text-sm font-semibold text-gray-600">Supervisor</Label>
+                                <div className="space-y-1">
+                                  <p className="text-base font-medium text-gray-900">{selectedCertificate.supervisor_name}</p>
+                                  <p className="text-sm text-gray-600 flex items-center gap-1">
+                                    <Mail className="h-3 w-3" />
+                                    {selectedCertificate.supervisor_email}
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+
+                      {/* Internship Experience */}
+                      <Card className="border-l-4 border-l-green-500">
+                        <CardHeader>
+                          <CardTitle className="text-lg flex items-center gap-2">
+                            <GraduationCap className="h-5 w-5 text-green-600" />
+                            Internship Experience
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-6">
+                          <div>
+                            <Label className="text-sm font-semibold text-gray-600 mb-2 block">Description</Label>
+                            <div className="bg-gray-50 p-4 rounded-lg">
+                              <p className="text-base text-gray-700 leading-relaxed whitespace-pre-line">
+                                {selectedCertificate.description}
+                              </p>
+                            </div>
+                          </div>
+                          
+                          <div>
+                            <Label className="text-sm font-semibold text-gray-600 mb-2 block">Skills Acquired</Label>
+                            <div className="bg-blue-50 p-4 rounded-lg">
+                              <p className="text-base text-gray-700 leading-relaxed">
+                                {selectedCertificate.skills}
+                              </p>
+                            </div>
+                          </div>
+                          
+                          <div>
+                            <Label className="text-sm font-semibold text-gray-600 mb-2 block">Projects Completed</Label>
+                            <div className="bg-green-50 p-4 rounded-lg">
+                              <p className="text-base text-gray-700 leading-relaxed whitespace-pre-line">
+                                {selectedCertificate.projects}
+                              </p>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+
+                      {/* Teacher Evaluation */}
+                      {selectedCertificate.feedback && (
+                        <Card className="border-l-4 border-l-orange-500">
+                          <CardHeader>
+                            <CardTitle className="text-lg flex items-center gap-2">
+                              <User className="h-5 w-5 text-orange-600" />
+                              Teacher Evaluation
+                            </CardTitle>
+                          </CardHeader>
+                          <CardContent>
+                            <div className="bg-orange-50 p-4 rounded-lg">
+                              <p className="text-base text-gray-700 leading-relaxed">
+                                {selectedCertificate.feedback}
+                              </p>
+                            </div>
+                            {selectedCertificate.approved_date && (
+                              <div className="mt-3 text-sm text-gray-600">
+                                <strong>Approved on:</strong> {new Date(selectedCertificate.approved_date).toLocaleDateString('en-US', { 
+                                  year: 'numeric', 
+                                  month: 'long', 
+                                  day: 'numeric' 
+                                })}
+                              </div>
+                            )}
+                          </CardContent>
+                        </Card>
+                      )}
+
+                      {/* File Information */}
+                      {selectedCertificate.file_name && (
+                        <Card className="border-l-4 border-l-gray-500">
+                          <CardHeader>
+                            <CardTitle className="text-lg flex items-center gap-2">
+                              <FileText className="h-5 w-5 text-gray-600" />
+                              Attached Files
+                            </CardTitle>
+                          </CardHeader>
+                          <CardContent>
+                            <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                              <div className="flex items-center gap-3">
+                                <FileText className="h-6 w-6 text-gray-600" />
+                                <div>
+                                  <p className="font-medium text-gray-900">{selectedCertificate.file_name}</p>
+                                  {selectedCertificate.file_size && (
+                                    <p className="text-sm text-gray-500">
+                                      {(selectedCertificate.file_size / (1024 * 1024)).toFixed(2)} MB
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
+                              {selectedCertificate.file_url && (
+                                <Button variant="outline" size="sm" asChild>
+                                  <a href={selectedCertificate.file_url} target="_blank" rel="noopener noreferrer">
+                                    <Download className="h-4 w-4 mr-2" />
+                                    Download
+                                  </a>
+                                </Button>
+                              )}
+                            </div>
+                          </CardContent>
+                        </Card>
+                      )}
+
+                      {/* Certificate Footer */}
+                      <div className="text-center border-t pt-6">
+                        <p className="text-sm text-gray-500 mb-2">This certificate is issued by Charusat University</p>
+                        <p className="text-sm text-gray-500 mb-4">Training & Placement Office</p>
+                        <div className="flex justify-center gap-4">
+                          <Button onClick={() => handleDownloadCertificate(selectedCertificate)}>
+                            <Download className="h-4 w-4 mr-2" />
+                            Download Certificate
+                          </Button>
+                          <Button variant="outline" onClick={() => {
+                            setShowFullCertificateDialog(false)
+                            handleViewCertificate(selectedCertificate)
+                          }}>
+                            <Eye className="h-4 w-4 mr-2" />
+                            Review & Approve
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  </ScrollArea>
+                )}
+              </DialogContent>
+            </Dialog>
 
             {/* Certificate Review Dialog */}
             <Dialog open={showCertificateDialog} onOpenChange={setShowCertificateDialog}>
@@ -696,6 +1042,92 @@ ${certificate.approved_date ? `Approval Date: ${new Date(certificate.approved_da
                         </CardContent>
                       </Card>
                     </div>
+
+                    {/* Uploaded Certificate File */}
+                    {selectedCertificate.file_name && (
+                      <Card className="border-l-4 border-l-blue-500">
+                        <CardHeader>
+                          <CardTitle className="text-lg flex items-center gap-2">
+                            <FileText className="h-5 w-5 text-blue-600" />
+                            Student Uploaded Certificate
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="bg-blue-50 p-4 rounded-lg">
+                            <div className="flex items-center justify-between mb-3">
+                              <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                                  <FileText className="h-5 w-5 text-blue-600" />
+                                </div>
+                                <div>
+                                  <p className="font-semibold text-blue-900">{selectedCertificate.file_name}</p>
+                                  {selectedCertificate.file_size && (
+                                    <p className="text-sm text-blue-600">
+                                      {(selectedCertificate.file_size / (1024 * 1024)).toFixed(2)} MB
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="flex gap-2">
+                                {selectedCertificate.file_url && (
+                                  <Button 
+                                    variant="default" 
+                                    size="sm"
+                                    className="bg-blue-600 hover:bg-blue-700"
+                                    onClick={() => window.open(selectedCertificate.file_url, '_blank')}
+                                  >
+                                    <Eye className="h-4 w-4 mr-1" />
+                                    View
+                                  </Button>
+                                )}
+                                {selectedCertificate.file_url && (
+                                  <Button 
+                                    variant="outline" 
+                                    size="sm"
+                                    onClick={() => {
+                                      const link = document.createElement('a')
+                                      link.href = selectedCertificate.file_url!
+                                      link.download = selectedCertificate.file_name!
+                                      link.click()
+                                      toast.success('File download started')
+                                    }}
+                                  >
+                                    <Download className="h-4 w-4 mr-1" />
+                                    Download
+                                  </Button>
+                                )}
+                              </div>
+                            </div>
+                            <div className="text-sm text-blue-700">
+                              <strong>Uploaded:</strong> {new Date(selectedCertificate.submission_date).toLocaleDateString('en-US', { 
+                                year: 'numeric', 
+                                month: 'long', 
+                                day: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit'
+                              })}
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    )}
+
+                    {/* No File Warning */}
+                    {!selectedCertificate.file_name && (
+                      <Card className="border-l-4 border-l-amber-500">
+                        <CardContent className="p-4">
+                          <div className="flex items-center gap-3 text-amber-700">
+                            <AlertTriangle className="h-5 w-5" />
+                            <div>
+                              <p className="font-medium">No Certificate File Found</p>
+                              <p className="text-sm text-amber-600">
+                                This submission does not include an uploaded certificate file. Please request the student to upload the certificate document.
+                              </p>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    )}
 
                     {/* Certificate Content */}
                     <Card>
