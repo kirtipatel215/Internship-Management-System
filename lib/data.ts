@@ -21,10 +21,27 @@ const pendingRequests = new Map<string, Promise<any>>()
 // ===================
 
 const calculateDuration = (startDate: string, endDate: string): string => {
-  const start = new Date(startDate)
-  const end = new Date(endDate)
-  const months = (end.getFullYear() - start.getFullYear()) * 12 + end.getMonth() - start.getMonth()
-  return `${months} month${months !== 1 ? "s" : ""}`
+  if (!startDate || !endDate) return "N/A"
+  
+  try {
+    const start = new Date(startDate)
+    const end = new Date(endDate)
+    const diffTime = Math.abs(end.getTime() - start.getTime())
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+    const months = Math.floor(diffDays / 30)
+    const weeks = Math.floor(diffDays / 7)
+    
+    if (months > 0) {
+      return `${months} month${months !== 1 ? "s" : ""}`
+    } else if (weeks > 0) {
+      return `${weeks} week${weeks !== 1 ? "s" : ""}`
+    } else {
+      return `${diffDays} day${diffDays !== 1 ? "s" : ""}`
+    }
+  } catch (error) {
+    console.error("Error calculating duration:", error)
+    return "N/A"
+  }
 }
 
 export const clearDataCache = (key?: string) => {
@@ -64,7 +81,7 @@ export const uploadFile = async (
   fileName?: string,
 ): Promise<{ success: boolean; fileUrl?: string; fileName?: string; error?: string }> => {
   try {
-    console.log("[v0] Starting file upload:", file.name, `(${(file.size / 1024 / 1024).toFixed(1)}MB)`)
+    console.log("[UPLOAD] Starting file upload:", file.name, `(${(file.size / 1024 / 1024).toFixed(1)}MB)`)
 
     if (!file) return { success: false, error: "No file provided" }
     if (file.size > 10 * 1024 * 1024) {
@@ -73,13 +90,14 @@ export const uploadFile = async (
 
     const timestamp = Date.now()
     const fileExt = file.name.split(".").pop()?.toLowerCase()
-    const baseName = file.name.replace(/[^a-zA-Z0-9.-]/g, "_").substring(0, 20)
-    const finalFileName = fileName || `${timestamp}_${baseName}.${fileExt}`
+    const sanitizedBaseName = file.name.replace(/[^a-zA-Z0-9.-]/g, "_").substring(0, 20)
+    const finalFileName = fileName || `${timestamp}_${sanitizedBaseName}.${fileExt}`
     const filePath = `${folder}/${finalFileName}`
 
     if (!supabase) {
-      console.log("[v0] Supabase not available, returning mock URL")
-      await new Promise((resolve) => setTimeout(resolve, 100))
+      console.log("[UPLOAD] Supabase not available, returning mock URL")
+      // Simulate upload delay
+      await new Promise((resolve) => setTimeout(resolve, 500))
       return {
         success: true,
         fileUrl: `https://mock-storage.charusat.edu.in/${filePath}`,
@@ -87,60 +105,94 @@ export const uploadFile = async (
       }
     }
 
-    const uploadPromise = supabase.storage.from("documents").upload(filePath, file, {
-      cacheControl: "3600",
-      upsert: true,
-    })
+    // Retry logic with exponential backoff
+    const maxRetries = 3
+    let lastError = null
 
-    const timeoutPromise = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error("Upload timeout after 30 seconds")), 30000),
-    )
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        console.log(`[UPLOAD] Attempt ${attempt}/${maxRetries} for ${file.name}`)
+        
+        // Create upload promise with timeout
+        const uploadPromise = supabase.storage.from("documents").upload(filePath, file, {
+          cacheControl: "3600",
+          upsert: true,
+          duplex: 'half' // Fix for some upload issues
+        })
 
-    const { data, error } = (await Promise.race([uploadPromise, timeoutPromise])) as any
+        // Set timeout based on file size (minimum 10 seconds, max 60 seconds)
+        const timeoutMs = Math.min(Math.max(10000, file.size / 1024 * 100), 60000)
+        const timeoutPromise = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error("Upload timeout")), timeoutMs)
+        )
 
-    if (error) {
-      console.error("[v0] Upload error:", error)
+        const { data, error } = await Promise.race([uploadPromise, timeoutPromise]) as any
 
-      // Retry with different filename if duplicate
-      if (error.message?.includes("duplicate") || error.code === "23505") {
-        const retryName = `${timestamp}_${Math.random().toString(36).substr(2, 4)}.${fileExt}`
-        const retryPath = `${folder}/${retryName}`
+        if (error) {
+          lastError = error
+          console.warn(`[UPLOAD] Attempt ${attempt} failed:`, error.message)
 
-        const { data: retryData, error: retryError } = await supabase.storage
-          .from("documents")
-          .upload(retryPath, file, { cacheControl: "3600", upsert: true })
+          // Handle specific errors
+          if (error.message?.includes("duplicate") || error.code === "23505") {
+            // Try with different filename
+            const retryFileName = `${timestamp}_${attempt}_${Math.random().toString(36).substr(2, 4)}.${fileExt}`
+            const retryPath = `${folder}/${retryFileName}`
+            
+            const { data: retryData, error: retryError } = await supabase.storage
+              .from("documents")
+              .upload(retryPath, file, { cacheControl: "3600", upsert: true })
 
-        if (retryError) {
-          throw new Error(`Upload failed: ${retryError.message}`)
+            if (!retryError) {
+              const { data: urlData } = supabase.storage.from("documents").getPublicUrl(retryPath)
+              return {
+                success: true,
+                fileUrl: urlData.publicUrl,
+                fileName: retryFileName,
+              }
+            }
+          }
+
+          // For other errors, wait before retry (exponential backoff)
+          if (attempt < maxRetries) {
+            const waitTime = Math.pow(2, attempt) * 1000 // 2s, 4s, 8s
+            console.log(`[UPLOAD] Waiting ${waitTime}ms before retry...`)
+            await new Promise(resolve => setTimeout(resolve, waitTime))
+            continue
+          }
+        } else {
+          // Success - get public URL
+          const { data: urlData } = supabase.storage.from("documents").getPublicUrl(filePath)
+          
+          console.log("[UPLOAD] File uploaded successfully:", urlData.publicUrl)
+          return {
+            success: true,
+            fileUrl: urlData.publicUrl,
+            fileName: finalFileName,
+          }
         }
-
-        const { data: urlData } = supabase.storage.from("documents").getPublicUrl(retryPath)
-
-        return {
-          success: true,
-          fileUrl: urlData.publicUrl,
-          fileName: retryName,
+      } catch (uploadError: any) {
+        lastError = uploadError
+        console.warn(`[UPLOAD] Attempt ${attempt} error:`, uploadError.message)
+        
+        if (attempt < maxRetries) {
+          const waitTime = Math.pow(2, attempt) * 1000
+          await new Promise(resolve => setTimeout(resolve, waitTime))
         }
       }
-
-      throw new Error(`Upload failed: ${error.message}`)
     }
 
-    // Get public URL
-    const { data: urlData } = supabase.storage.from("documents").getPublicUrl(filePath)
-
-    console.log("[v0] File uploaded successfully:", urlData.publicUrl)
-
-    return {
-      success: true,
-      fileUrl: urlData.publicUrl,
-      fileName: finalFileName,
-    }
-  } catch (error: any) {
-    console.error("[v0] File upload error:", error)
+    // All retries failed
+    console.error("[UPLOAD] All upload attempts failed:", lastError)
     return {
       success: false,
-      error: error.message || "Upload failed",
+      error: lastError?.message || "Upload failed after multiple attempts"
+    }
+
+  } catch (error: any) {
+    console.error("[UPLOAD] Critical upload error:", error)
+    return {
+      success: false,
+      error: error.message || "Critical upload error"
     }
   }
 }
@@ -369,198 +421,156 @@ export const createNOCRequest = async (requestData: any) => {
 
 export const getReportsByStudent = async (studentId: string): Promise<any[]> => {
   try {
-    console.log("Fetching reports for student:", studentId)
+    console.log("[REPORTS] Fetching reports for student:", studentId)
     if (!supabase) {
-      console.log("Supabase not available, using mock reports")
+      console.log("[REPORTS] Supabase not available, using mock reports")
       return getMockReports(studentId)
     }
 
-    try {
-      const { data, error } = await supabase
-        .from("weekly_reports")
-        .select("*")
-        .eq("student_id", studentId)
-        .order("week_number", { ascending: true })
+    const { data, error } = await supabase
+      .from("weekly_reports")
+      .select(`
+        *,
+        noc_requests!weekly_reports_internship_id_fkey (
+          id,
+          company_name,
+          position,
+          start_date,
+          end_date,
+          status
+        )
+      `)
+      .eq("student_id", studentId)
+      .order("week_number", { ascending: true })
 
-      if (error) {
-        console.error("Database error fetching reports:", error)
-        console.log("Falling back to mock data due to database error")
-        return getMockReports(studentId)
-      }
-
-      const reports = Array.isArray(data) ? data : []
-      console.log(`Successfully fetched ${reports.length} reports from database`)
-      return reports
-    } catch (dbError) {
-      console.error("Database connection error:", dbError)
-      console.log("Falling back to mock data due to connection error")
+    if (error) {
+      console.error("[REPORTS] Database error fetching reports:", error)
+      console.log("[REPORTS] Falling back to mock data")
       return getMockReports(studentId)
     }
+
+    const reports = Array.isArray(data) ? data : []
+    console.log(`[REPORTS] Successfully fetched ${reports.length} reports from database`)
+    
+    // Normalize the data structure
+    const normalizedReports = reports.map(report => ({
+      ...report,
+      internship_id: report.internship_id || report.noc_request_id,
+      company_name: report.noc_requests?.company_name,
+      position: report.noc_requests?.position,
+      internship_start_date: report.noc_requests?.start_date,
+      internship_end_date: report.noc_requests?.end_date,
+      internship_status: report.noc_requests?.status
+    }))
+
+    return normalizedReports
   } catch (error) {
-    console.error("Error in getReportsByStudent:", error)
-    console.log("Falling back to mock data due to unexpected error")
+    console.error("[REPORTS] Error in getReportsByStudent:", error)
+    console.log("[REPORTS] Falling back to mock data")
     return getMockReports(studentId)
   }
 }
 
 
+
 export const createWeeklyReport = async (reportData: any, file?: File) => {
   try {
+    console.log("[REPORTS] Creating weekly report with data:", reportData)
+
     if (!reportData.studentId) {
       throw new Error("Student ID is required for weekly report")
     }
-    if (!reportData.studentName) {
-      throw new Error("Student name is required for weekly report")
-    }
-    if (!reportData.studentEmail) {
-      throw new Error("Student email is required for weekly report")
+    if (!reportData.internshipId) {
+      throw new Error("Internship ID is required for weekly report")
     }
 
-    console.log("Creating weekly report with data:", reportData)
     let fileUrl = null
     let fileName = null
     let fileSize = null
 
+    // Handle file upload if provided
     if (file) {
-      console.log("Uploading file:", file.name, "Size:", file.size)
+      console.log("[REPORTS] Uploading file:", file.name, "Size:", file.size)
       const uploadFileName = `week${reportData.week || 1}_${reportData.studentId}_${Date.now()}.${file.name.split(".").pop()}`
       const uploadResult = await uploadFile(file, "reports", uploadFileName)
+      
       if (!uploadResult.success) {
         throw new Error(uploadResult.error || "File upload failed")
       }
+      
       fileUrl = uploadResult.fileUrl
       fileName = uploadResult.fileName
       fileSize = file.size
-      console.log("File uploaded successfully:", fileName)
-    }
-
-    if (!supabase) {
-      const newReport = {
-        id: Math.floor(Math.random() * 1000) + 100,
-        student_id: reportData.studentId,
-        student_name: reportData.studentName,
-        student_email: reportData.studentEmail,
-        week_number: reportData.week || 1,
-        title: reportData.title,
-        description: reportData.description,
-        achievements: reportData.achievements || [],
-        status: "pending",
-        file_name: fileName,
-        file_url: fileUrl,
-        file_size: fileSize,
-        comments: reportData.comments || null,
-        submitted_date: new Date().toISOString(),
-        created_at: new Date().toISOString(),
-      }
-      console.log("Created mock weekly report:", newReport)
-      return newReport
+      console.log("[REPORTS] File uploaded successfully:", fileName)
     }
 
     const insertData: any = {
       student_id: reportData.studentId,
       student_name: reportData.studentName,
       student_email: reportData.studentEmail,
+      internship_id: reportData.internshipId, // This is the key fix
       week_number: reportData.week || 1,
       title: reportData.title,
       description: reportData.description,
       achievements: reportData.achievements || [],
       status: "pending",
       comments: reportData.comments || null,
+      submitted_date: new Date().toISOString()
     }
 
+    // Add file data if available
     if (fileName) {
       insertData.file_name = fileName
       insertData.file_url = fileUrl
       insertData.file_size = fileSize
     }
 
-    console.log("Inserting report data:", insertData)
-    const { data, error } = await supabase.from("weekly_reports").insert(insertData).select().single()
+    if (!supabase) {
+      const mockReport = {
+        id: Math.floor(Math.random() * 1000) + 100,
+        ...insertData,
+        created_at: new Date().toISOString()
+      }
+      console.log("[REPORTS] Created mock weekly report:", mockReport)
+      return mockReport
+    }
+
+    console.log("[REPORTS] Inserting report data:", insertData)
+    const { data, error } = await supabase
+      .from("weekly_reports")
+      .insert(insertData)
+      .select(`
+        *,
+        noc_requests!weekly_reports_internship_id_fkey (
+          company_name,
+          position,
+          start_date,
+          end_date
+        )
+      `)
+      .single()
 
     if (error) {
-      console.error("Database error creating report:", error)
+      console.error("[REPORTS] Database error creating report:", error)
       throw new Error(`Database error: ${error.message}`)
     }
 
-    console.log("Successfully created report in database:", data)
+    console.log("[REPORTS] Successfully created report in database:", data)
+    
+    // Clear relevant caches
     clearDataCache(`reports-${reportData.studentId}`)
-    return data
+    
+    return {
+      ...data,
+      company_name: data.noc_requests?.company_name,
+      position: data.noc_requests?.position
+    }
   } catch (error: any) {
-    console.error("Error creating weekly report:", error)
+    console.error("[REPORTS] Error creating weekly report:", error)
     throw new Error(error.message || "Failed to create weekly report")
   }
 }
-export const getApprovedInternshipsByStudentDirect = async (studentId: string) => {
-  try {
-    console.log("[v0] Fetching approved internships directly for student:", studentId)
 
-    if (!supabase) {
-      // Mock data for development
-      return [
-        {
-          id: 1,
-          student_id: studentId,
-          company_name: "Google Inc.",
-          internship_title: "Software Engineering Intern",
-          position: "Software Engineering Intern",
-          start_date: "2024-06-01",
-          end_date: "2024-08-31",
-          duration: "3 months",
-          status: "approved" as const,
-          approved_date: "2024-05-15",
-          approved_by: "Dr. John Smith"
-        }
-      ]
-    }
-
-    const { data, error } = await supabase
-      .from("noc_requests")
-      .select(`
-        id,
-        student_id,
-        company_name,
-        position,
-        start_date,
-        end_date,
-        duration,
-        status,
-        approved_date,
-        teacher_approved_date,
-        approved_by,
-        teacher_approved_by
-      `)
-      .eq("student_id", studentId)
-      .eq("status", "approved")
-      .order("approved_date", { ascending: false })
-
-    if (error) {
-      console.error("[v0] Error fetching approved internships:", error)
-      return []
-    }
-
-    // Transform data to match expected interface
-    const transformedData = (data || []).map((noc) => ({
-      id: noc.id,
-      student_id: noc.student_id,
-      company_name: noc.company_name,
-      internship_title: noc.position,
-      position: noc.position,
-      start_date: noc.start_date,
-      end_date: noc.end_date,
-      duration: noc.duration || calculateDuration(noc.start_date, noc.end_date),
-      status: "approved" as const,
-      approved_date: noc.approved_date || noc.teacher_approved_date,
-      approved_by: noc.approved_by || noc.teacher_approved_by
-    }))
-
-    console.log(`[v0] Successfully fetched ${transformedData.length} approved internships`)
-    return transformedData
-
-  } catch (error) {
-    console.error("[v0] Error in getApprovedInternshipsByStudentDirect:", error)
-    return []
-  }
-}
 
 // ===================
 // CERTIFICATES - FIXED WITH SCHEMA ALIGNMENT
@@ -649,39 +659,83 @@ export const createCertificate = async (certificateData: any) => {
 }
 export const getApprovedInternshipsByStudent = async (studentId: string) => {
   try {
-    console.log("[v0] Fetching approved internships for student:", studentId)
+    console.log("[INTERNSHIPS] Fetching approved internships for student:", studentId)
 
-    // Use your existing getAllNOCRequests function
-    const allNOCRequests = await getAllNOCRequests()
-    
-    // Filter for approved NOCs belonging to current user
-    const userApprovedInternships = allNOCRequests
-      .filter((noc: any) => 
-        noc.student_id === studentId && 
-        noc.status === 'approved'
-      )
-      .map((noc: any) => ({
+    if (!supabase) {
+      // Mock data for development
+      return [
+        {
+          id: 1,
+          student_id: studentId,
+          company_name: "Google Inc.",
+          internship_title: "Software Engineering Intern",
+          position: "Software Engineering Intern",
+          start_date: "2024-06-01",
+          end_date: "2024-08-31",
+          duration: "3 months",
+          status: "approved" as const,
+          approved_date: "2024-05-15",
+          approved_by: "Dr. John Smith"
+        }
+      ]
+    }
+
+    const { data, error } = await supabase
+      .from("noc_requests")
+      .select(`
+        id,
+        student_id,
+        company_name,
+        position,
+        start_date,
+        end_date,
+        duration,
+        status,
+        approved_date,
+        teacher_approved_date,
+        approved_by,
+        teacher_approved_by,
+        description
+      `)
+      .eq("student_id", studentId)
+      .eq("status", "approved")
+      .order("approved_date", { ascending: false })
+
+    if (error) {
+      console.error("[INTERNSHIPS] Error fetching approved internships:", error)
+      return []
+    }
+
+    // Transform and calculate duration if missing
+    const transformedData = (data || []).map((noc) => {
+      const calculatedDuration = noc.duration || calculateDuration(noc.start_date, noc.end_date)
+      
+      return {
         id: noc.id,
         student_id: noc.student_id,
         company_name: noc.company_name,
-        internship_title: noc.position, // Using position as internship title
+        internship_title: noc.position,
         position: noc.position,
         start_date: noc.start_date,
         end_date: noc.end_date,
-        duration: noc.duration || calculateDuration(noc.start_date, noc.end_date),
-        status: 'approved' as const,
+        duration: calculatedDuration,
+        status: "approved" as const,
         approved_date: noc.approved_date || noc.teacher_approved_date,
-        approved_by: noc.approved_by || noc.teacher_approved_by
-      }))
+        approved_by: noc.approved_by || noc.teacher_approved_by,
+        description: noc.description
+      }
+    })
 
-    console.log(`[v0] Found ${userApprovedInternships.length} approved internships for student`)
-    return userApprovedInternships
+    console.log(`[INTERNSHIPS] Successfully fetched ${transformedData.length} approved internships`)
+    return transformedData
 
   } catch (error) {
-    console.error("[v0] Error fetching approved internships:", error)
+    console.error("[INTERNSHIPS] Error in getApprovedInternshipsByStudent:", error)
     return []
   }
 }
+
+
 
 // ===================
 // APPLICATIONS - FIXED WITH SCHEMA ALIGNMENT

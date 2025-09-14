@@ -1,1544 +1,1359 @@
 "use client"
+
 import type React from "react"
-import { useState, useEffect, useCallback, useRef } from "react"
 import { AuthGuard } from "@/components/auth-guard"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
-
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { toast, useToast } from "@/hooks/use-toast"
-import { cn } from "@/lib/utils"
-
-// Data helpers
-import { getNOCRequestsByStudent, createNOCRequest, getCurrentUser, uploadFile } from "@/lib/data"
-
-// NOC Certificate Generator
+import { Progress } from "@/components/ui/progress"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { 
-  generateAndDownloadNOCPDF, 
-  generateNOCCertificateNumber,
-  type NOCCertificateData 
-} from "@/lib/noc-generator"
-
-// Icons
-import {
-  Plus,
-  FileText,
-  Clock,
-  XCircle,
-  Eye,
-  Download,
-  Pencil,
-  Upload,
-  Paperclip,
-  Building,
+  Plus, 
+  Upload, 
+  CheckCircle, 
+  Clock, 
+  AlertCircle, 
+  MessageSquare, 
+  Download, 
+  FileText, 
   Calendar,
-  CheckCircle2,
-  AlertCircle,
-  X,
-  ExternalLink,
-  Search,
+  Star,
+  Eye,
+  TrendingUp,
+  Award,
+  User,
+  Building,
+  Hash,
+  Target,
+  BookOpen,
   Filter,
-  DollarSign,
-  CalendarDays,
+  Search,
+  Briefcase,
+  PlayCircle,
+  StopCircle,
+  Activity,
+  BarChart3,
+  ChevronRight,
+  Loader2,
+  CheckIcon,
+  XIcon,
+  RefreshCw
 } from "lucide-react"
+import { useState, useEffect } from "react"
+import { 
+  getReportsByStudent, 
+  createWeeklyReport, 
+  getCurrentUser, 
+  getApprovedInternshipsByStudent,
+  downloadFile 
+} from "@/lib/data"
+import { useToast } from "@/hooks/use-toast"
 
-// Dialog components
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
-
-type NOCRequest = {
+// Define interfaces
+interface WeeklyReport {
   id: number
-  company: string
-  position: string
-  startDate: string
-  endDate: string
-  stipend?: string
-  submittedDate: string
-  approvedDate?: string
-  status: "approved" | "pending" | "rejected" | string
-  description: string
-  feedback?: string
-  documents?: string[] // paths or URLs
+  internship_id?: number
+  student_id?: string
+  studentId?: string
+  student_name?: string
   studentName?: string
+  student_email?: string
   studentEmail?: string
-  rollNumber?: string
+  week_number?: number
+  week?: number
+  title: string
+  description: string
+  achievements: string[]
+  status: 'pending' | 'approved' | 'revision_required'
+  file_name?: string
+  fileName?: string
+  file_url?: string
+  fileUrl?: string
+  file_size?: number
+  fileSize?: number
+  feedback?: string
+  grade?: string
+  submitted_date?: string
+  submittedDate?: string
+  created_at?: string
+  createdAt?: string
+  comments?: string
+  company_name?: string
+  position?: string
+}
+
+interface User {
+  id: string
+  name: string
+  email: string
+  role: string
   department?: string
-  approvedBy?: string
-  [key: string]: any
+  rollNumber?: string
+  loginTime?: string
 }
 
-const STATUS_META: Record<string, { label: string; icon: React.ElementType; badgeClass: string; chipClass: string }> = {
-  approved: {
-    label: "Approved",
-    icon: CheckCircle2,
-    badgeClass: "bg-emerald-600 text-white",
-    chipClass: "text-emerald-700 bg-emerald-50 ring-1 ring-emerald-200",
-  },
-  pending: {
-    label: "Under Review",
-    icon: Clock,
-    badgeClass: "bg-amber-500 text-white",
-    chipClass: "text-amber-700 bg-amber-50 ring-1 ring-amber-200",
-  },
-  rejected: {
-    label: "Rejected",
-    icon: XCircle,
-    badgeClass: "bg-rose-600 text-white",
-    chipClass: "text-rose-700 bg-rose-50 ring-1 ring-rose-200",
-  },
-  unknown: {
-    label: "Unknown",
-    icon: AlertCircle,
-    badgeClass: "bg-gray-500 text-white",
-    chipClass: "text-gray-700 bg-gray-50 ring-1 ring-gray-200",
-  },
+interface Internship {
+  id: number
+  company_name: string
+  internship_title?: string
+  position: string
+  start_date: string
+  end_date: string
+  duration: string
+  status: 'approved'
+  approved_date?: string
+  approved_by?: string
+  description?: string
 }
 
-function prettyStatus(s?: string) {
-  const k = (s || "unknown").toLowerCase()
-  return STATUS_META[k] ?? STATUS_META.unknown
-}
-
-// Calculate duration from start and end dates
-function calculateDuration(startDate: string, endDate: string): string {
-  const start = new Date(startDate)
-  const end = new Date(endDate)
-  const diffTime = Math.abs(end.getTime() - start.getTime())
-  const diffMonths = Math.ceil(diffTime / (1000 * 60 * 60 * 24 * 30))
-
-  if (diffMonths === 1) return "1 month"
-  if (diffMonths < 12) return `${diffMonths} months`
-
-  const years = Math.floor(diffMonths / 12)
-  const remainingMonths = diffMonths % 12
-
-  if (remainingMonths === 0) return `${years} year${years > 1 ? "s" : ""}`
-  return `${years} year${years > 1 ? "s" : ""} ${remainingMonths} month${remainingMonths > 1 ? "s" : ""}`
-}
-
-// Enhanced Upload Zone Component with optimizations
-function UploadZone({
-  onFiles,
-  busy,
-  selectedFiles,
-}: {
-  onFiles: (files: File[]) => void
-  busy?: boolean
-  selectedFiles: File[]
-}) {
-  const [dragOver, setDragOver] = useState(false)
-  const fileInputRef = useRef<HTMLInputElement>(null)
-
-  const validateFile = (file: File): string | null => {
-    if (file.type !== "application/pdf") {
-      return "Only PDF files are allowed"
-    }
-    if (file.size > 10 * 1024 * 1024) {
-      return "File size must be less than 10MB"
-    }
-    if (file.size < 1024) {
-      return "File seems too small to be a valid PDF"
-    }
-    return null
-  }
-
-  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault()
-    e.stopPropagation()
-    setDragOver(false)
-
-    const droppedFiles = Array.from(e.dataTransfer.files || [])
-    const validFiles: File[] = []
-    const errors: string[] = []
-
-    droppedFiles.forEach((file) => {
-      const error = validateFile(file)
-      if (error) {
-        errors.push(`${file.name}: ${error}`)
-      } else {
-        validFiles.push(file)
-      }
-    })
-
-    if (errors.length > 0) {
-      toast({
-        title: "Invalid Files",
-        description: errors.join(", "),
-        variant: "destructive",
-      })
-    }
-
-    if (validFiles.length > 0) {
-      onFiles([validFiles[0]])
-    }
-  }
-
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const selectedFile = e.target.files?.[0]
-    if (!selectedFile) return
-
-    const error = validateFile(selectedFile)
-    if (error) {
-      toast({
-        title: "Invalid File",
-        description: error,
-        variant: "destructive",
-      })
-      return
-    }
-
-    onFiles([selectedFile])
-  }
-
-  const triggerFileSelect = () => {
-    if (busy) return
-    fileInputRef.current?.click()
-  }
-
-  return (
-    <div className="space-y-4">
-      <div
-        onDragOver={(e) => {
-          e.preventDefault()
-          if (!busy) setDragOver(true)
-        }}
-        onDragLeave={() => setDragOver(false)}
-        onDrop={handleDrop}
-        className={cn(
-          "relative border-2 border-dashed rounded-xl p-6 transition-all duration-200 cursor-pointer",
-          dragOver && !busy ? "border-blue-400 bg-blue-50" : "border-gray-300 hover:border-gray-400",
-          busy && "opacity-50 cursor-not-allowed",
-        )}
-        onClick={triggerFileSelect}
-      >
-        <div className="text-center">
-          <div
-            className={cn(
-              "mx-auto h-12 w-12 rounded-full flex items-center justify-center mb-4 transition-colors",
-              dragOver && !busy ? "bg-blue-100" : "bg-gray-100",
-            )}
-          >
-            {busy ? (
-              <Clock className="h-6 w-6 text-gray-500 animate-spin" />
-            ) : (
-              <Upload className="h-6 w-6 text-gray-500" />
-            )}
-          </div>
-          <h3 className="text-lg font-medium text-gray-900 mb-2">
-            {busy ? "Processing..." : "Upload Documents (Optional)"}
-          </h3>
-          <p className="text-sm text-gray-500 mb-4">
-            {busy ? "Please wait while we process your file..." : "Upload offer letter or other supporting documents"}
-          </p>
-          <p className="text-xs text-gray-400 mb-4">PDF files only, max 10MB • Optional</p>
-
-          <Button
-            type="button"
-            variant="outline"
-            disabled={busy}
-            onClick={(e) => {
-              e.stopPropagation()
-              triggerFileSelect()
-            }}
-            className="rounded-lg"
-          >
-            <Paperclip className="h-4 w-4 mr-2" />
-            {busy ? "Processing..." : "Choose PDF File"}
-          </Button>
-
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="application/pdf"
-            onChange={handleFileSelect}
-            className="hidden"
-            disabled={busy}
-          />
-        </div>
-      </div>
-
-      {/* Selected Files Preview */}
-      {selectedFiles.length > 0 && (
-        <div className="space-y-2">
-          <Label className="text-sm font-medium">Selected Files</Label>
-          {selectedFiles.map((file, index) => {
-            const isValid = !validateFile(file)
-            return (
-              <div
-                key={index}
-                className={cn(
-                  "flex items-center justify-between p-3 border rounded-lg transition-colors",
-                  isValid ? "bg-green-50 border-green-200" : "bg-red-50 border-red-200",
-                )}
-              >
-                <div className="flex items-center gap-3">
-                  <div
-                    className={cn(
-                      "h-8 w-8 rounded flex items-center justify-center",
-                      isValid ? "bg-green-100" : "bg-red-100",
-                    )}
-                  >
-                    {isValid ? (
-                      <CheckCircle2 className="h-4 w-4 text-green-600" />
-                    ) : (
-                      <AlertCircle className="h-4 w-4 text-red-600" />
-                    )}
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-gray-900">{file.name}</p>
-                    <p className="text-xs text-gray-500">
-                      {(file.size / (1024 * 1024)).toFixed(2)} MB
-                      {isValid && <span className="text-green-600 ml-2">✓ Valid PDF</span>}
-                    </p>
-                  </div>
-                </div>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    onFiles(selectedFiles.filter((_, i) => i !== index))
-                  }}
-                  disabled={busy}
-                  className="text-gray-500 hover:text-red-600"
-                >
-                  <X className="h-4 w-4" />
-                </Button>
-              </div>
-            )
-          })}
-        </div>
-      )}
-    </div>
-  )
-}
-
-// Enhanced NOC Card Component
-function NOCCard({
-  request,
-  currentUser,
-  onView,
-  onEdit,
-  onDownloadNOC,
-}: {
-  request: NOCRequest
-  currentUser: any
-  onView: () => void
-  onEdit: () => void
-  onDownloadNOC: () => void
-}) {
-  const meta = prettyStatus(request.status)
-  const StatusIcon = meta.icon
-  const duration = calculateDuration(request.startDate, request.endDate)
-
-  return (
-    <Card
-      className="group hover:shadow-lg transition-all duration-200 border-0 shadow-sm cursor-pointer"
-      onClick={onView}
-    >
-      <CardContent className="p-6">
-        <div className="flex items-start justify-between mb-4">
-          <div className="flex items-center gap-3">
-            <div className="h-12 w-12 rounded-xl bg-blue-100 flex items-center justify-center">
-              <Building className="h-6 w-6 text-blue-600" />
-            </div>
-            <div>
-              <h3 className="text-lg font-semibold text-gray-900 group-hover:text-blue-600 transition-colors">
-                {request.company}
-              </h3>
-              <p className="text-sm text-gray-600">{request.position}</p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <span
-              className={cn(
-                "inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full",
-                meta.chipClass,
-              )}
-            >
-              <StatusIcon className="h-3.5 w-3.5" />
-              {meta.label}
-            </span>
-          </div>
-        </div>
-
-        <div className="space-y-3">
-          <p className="text-sm text-gray-700 line-clamp-2">{request.description}</p>
-
-          <div className="flex flex-wrap gap-2">
-            <div className="inline-flex items-center gap-1.5 text-xs bg-indigo-50 text-indigo-700 px-2.5 py-1 rounded-md">
-              <CalendarDays className="h-3 w-3" />
-              {duration}
-            </div>
-            <div className="inline-flex items-center gap-1.5 text-xs bg-blue-50 text-blue-700 px-2.5 py-1 rounded-md">
-              <Calendar className="h-3 w-3" />
-              {new Date(request.startDate).toLocaleDateString()}
-            </div>
-            {request.stipend && (
-              <div className="inline-flex items-center gap-1.5 text-xs bg-green-50 text-green-700 px-2.5 py-1 rounded-md">
-                <DollarSign className="h-3 w-3" />
-                {request.stipend}
-              </div>
-            )}
-            {request.documents && request.documents.length > 0 && (
-              <div className="inline-flex items-center gap-1.5 text-xs bg-gray-50 text-gray-700 px-2.5 py-1 rounded-md">
-                <FileText className="h-3 w-3" />
-                {request.documents.length} Document{request.documents.length > 1 ? "s" : ""}
-              </div>
-            )}
-          </div>
-
-          <div className="flex items-center justify-between pt-2 border-t">
-            <span className="text-xs text-gray-500">
-              Submitted {new Date(request.submittedDate).toLocaleDateString()}
-            </span>
-
-            <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={onEdit}
-                disabled={request.status === "approved"}
-                className="h-8 px-3 text-xs bg-transparent"
-              >
-                <Pencil className="h-3 w-3 mr-1" />
-                Edit
-              </Button>
-              <Button size="sm" onClick={onView} className="h-8 px-3 text-xs">
-                <Eye className="h-3 w-3 mr-1" />
-                View
-              </Button>
-              {request.status === "approved" && (
-                <Button 
-                  size="sm" 
-                  onClick={onDownloadNOC} 
-                  className="h-8 px-3 text-xs bg-emerald-600 hover:bg-emerald-700"
-                >
-                  <Download className="h-3 w-3 mr-1" />
-                  NOC
-                </Button>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {request.feedback && (
-          <div className="mt-4 p-3 rounded-lg bg-amber-50 border border-amber-200">
-            <p className="text-xs font-medium text-amber-800 mb-1">Feedback</p>
-            <p className="text-xs text-amber-700">{request.feedback}</p>
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  )
-}
-
-// Enhanced Edit Form Component
-function EditForm({
-  request,
-  onCancel,
-  onSave,
-}: {
-  request: NOCRequest
-  onCancel: () => void
-  onSave: (updates: Partial<NOCRequest>) => void
-}) {
-  const [company, setCompany] = useState(request.company)
-  const [position, setPosition] = useState(request.position)
-  const [startDate, setStartDate] = useState(() => (request.startDate || "").slice(0, 10))
-  const [endDate, setEndDate] = useState(() => (request.endDate || "").slice(0, 10))
-  const [stipend, setStipend] = useState(request.stipend || "")
-  const [description, setDescription] = useState(request.description)
-  const [isSaving, setIsSaving] = useState(false)
-
-  const isDisabled = request.status === "approved"
-
-  const handleSave = async () => {
-    setIsSaving(true)
-
-    try {
-      const updates = {
-        company,
-        position,
-        startDate,
-        endDate,
-        stipend,
-        description,
-      }
-
-      await onSave(updates)
-    } catch (error) {
-      console.error("Error saving updates:", error)
-    } finally {
-      setIsSaving(false)
-    }
-  }
-
-  return (
-    <div className="space-y-6">
-      {isDisabled && (
-        <div className="p-4 rounded-lg bg-emerald-50 border border-emerald-200">
-          <div className="flex items-center gap-2">
-            <CheckCircle2 className="h-5 w-5 text-emerald-600" />
-            <p className="text-sm font-medium text-emerald-900">This request has been approved and cannot be edited.</p>
-          </div>
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="space-y-2">
-          <Label htmlFor="edit-company" className="text-sm font-medium text-gray-700">
-            Company Name
-          </Label>
-          <Input
-            id="edit-company"
-            value={company}
-            onChange={(e) => setCompany(e.target.value)}
-            disabled={isDisabled}
-            className="rounded-lg border-gray-300"
-          />
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="edit-position" className="text-sm font-medium text-gray-700">
-            Position
-          </Label>
-          <Input
-            id="edit-position"
-            value={position}
-            onChange={(e) => setPosition(e.target.value)}
-            disabled={isDisabled}
-            className="rounded-lg border-gray-300"
-          />
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="edit-startDate" className="text-sm font-medium text-gray-700">
-            Start Date
-          </Label>
-          <Input
-            id="edit-startDate"
-            type="date"
-            value={startDate}
-            onChange={(e) => setStartDate(e.target.value)}
-            disabled={isDisabled}
-            className="rounded-lg border-gray-300"
-          />
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="edit-endDate" className="text-sm font-medium text-gray-700">
-            End Date
-          </Label>
-          <Input
-            id="edit-endDate"
-            type="date"
-            value={endDate}
-            onChange={(e) => setEndDate(e.target.value)}
-            disabled={isDisabled}
-            className="rounded-lg border-gray-300"
-          />
-        </div>
-
-        <div className="space-y-2 md:col-span-2">
-          <Label htmlFor="edit-stipend" className="text-sm font-medium text-gray-700">
-            Stipend (Optional)
-          </Label>
-          <Input
-            id="edit-stipend"
-            value={stipend}
-            onChange={(e) => setStipend(e.target.value)}
-            placeholder="e.g., ₹15,000/month or Unpaid"
-            disabled={isDisabled}
-            className="rounded-lg border-gray-300"
-          />
-        </div>
-      </div>
-
-      <div className="space-y-2">
-        <Label htmlFor="edit-description" className="text-sm font-medium text-gray-700">
-          Job Description
-        </Label>
-        <Textarea
-          id="edit-description"
-          rows={4}
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          disabled={isDisabled}
-          className="rounded-lg border-gray-300"
-        />
-      </div>
-
-      <div className="flex justify-end gap-3 pt-4 border-t">
-        <Button variant="outline" onClick={onCancel} className="rounded-lg px-6 bg-transparent">
-          Cancel
-        </Button>
-        <Button
-          onClick={handleSave}
-          disabled={isSaving || isDisabled}
-          className="rounded-lg px-6 bg-blue-600 hover:bg-blue-700"
-        >
-          {isSaving ? (
-            <>
-              <Clock className="mr-2 h-4 w-4 animate-spin" />
-              Saving...
-            </>
-          ) : (
-            <>
-              <CheckCircle2 className="mr-2 h-4 w-4" />
-              Save Changes
-            </>
-          )}
-        </Button>
-      </div>
-    </div>
-  )
-}
-
-export default function NOCRequests() {
-  const [showForm, setShowForm] = useState(false)
-  const [nocRequests, setNocRequests] = useState<NOCRequest[]>([])
-  const [filteredRequests, setFilteredRequests] = useState<NOCRequest[]>([])
-  const [searchTerm, setSearchTerm] = useState("")
+export default function InternshipBasedWeeklyReports() {
+  const [selectedInternship, setSelectedInternship] = useState<Internship | null>(null)
+  const [showForm, setShowForm] = useState<boolean>(false)
+  const [reports, setReports] = useState<WeeklyReport[]>([])
+  const [internships, setInternships] = useState<Internship[]>([])
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false)
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null)
+  const [currentUser, setCurrentUser] = useState<User | null>(null)
+  const [searchTerm, setSearchTerm] = useState<string>("")
   const [statusFilter, setStatusFilter] = useState<string>("all")
-  const [isSubmitting, setIsSubmitting] = useState(false)
-  const [submitProgress, setSubmitProgress] = useState("")
-  const [selectedFiles, setSelectedFiles] = useState<File[]>([])
-  const [viewing, setViewing] = useState<NOCRequest | null>(null)
-  const [editing, setEditing] = useState<NOCRequest | null>(null)
-  const [currentUser, setCurrentUser] = useState<any>(null)
-  const [isDownloading, setIsDownloading] = useState(false)
+  const [viewMode, setViewMode] = useState<string>("internships")
+  const [loading, setLoading] = useState<boolean>(true)
+  const [uploadProgress, setUploadProgress] = useState<number>(0)
+  const [uploadStatus, setUploadStatus] = useState<string>("")
+  const [retryCount, setRetryCount] = useState<number>(0)
   const { toast } = useToast()
-  const [isLoading, setIsLoading] = useState(false)
 
-  // Load current user and data
   useEffect(() => {
     const loadData = async () => {
       try {
+        setLoading(true)
+        console.log("Loading user data and internships...")
+        
         const user = await getCurrentUser()
-        setCurrentUser(user)
-
-        if (!user) return setNocRequests([])
-
-        const rows = await getNOCRequestsByStudent(user.id)
-        const normalized: NOCRequest[] = (rows || []).map((r: any) => ({
-          id: r.id,
-          company: r.company ?? r.company_name ?? "",
-          position: r.position,
-          startDate: r.start_date ?? r.startDate,
-          endDate: r.end_date ?? r.endDate,
-          stipend: r.stipend,
-          submittedDate: r.submitted_date ?? r.submittedDate ?? new Date().toISOString(),
-          approvedDate: r.approved_date ?? r.approvedDate,
-          status: r.status ?? "pending",
-          description: r.description ?? "",
-          feedback: r.feedback ?? "",
-          documents: Array.isArray(r.documents)
-            ? r.documents
-            : typeof r.documents === "string"
-              ? (() => {
-                  try {
-                    const j = JSON.parse(r.documents)
-                    return Array.isArray(j) ? j : []
-                  } catch {
-                    return []
-                  }
-                })()
-              : [],
-          studentName: r.student_name || user.name,
-          studentEmail: r.student_email || user.email,
-          rollNumber: r.roll_number || user.rollNumber,
-          department: r.department || user.department,
-          approvedBy: r.approved_by || r.teacher_approved_by,
-          raw: r,
-        }))
-        setNocRequests(normalized)
-      } catch (err) {
-        console.error("Error loading data:", err)
-        setNocRequests([])
-      }
-    }
-    loadData()
-  }, [])
-
-  useEffect(() => {
-    const loadNOCRequests = async () => {
-      if (!currentUser?.id) {
-        console.log("[v0] No current user, skipping NOC requests fetch")
-        return
-      }
-
-      try {
-        setIsLoading(true)
-        console.log("[v0] Loading NOC requests for user:", currentUser.id)
-
-        const requests = await getNOCRequestsByStudent(currentUser.id)
-        console.log("[v0] Loaded NOC requests:", requests?.length || 0)
-
-        setNocRequests(requests || [])
+        if (user) {
+          setCurrentUser(user)
+          console.log("Current user loaded:", user.name)
+          
+          // Load user's approved internships
+          console.log("Loading approved internships...")
+          const userInternships = await getApprovedInternshipsByStudent(user.id)
+          console.log("Internships loaded:", userInternships.length)
+          setInternships(Array.isArray(userInternships) ? userInternships : [])
+          
+          // Load all reports for the user
+          console.log("Loading reports...")
+          const userReports = await getReportsByStudent(user.id)
+          console.log("Reports loaded:", userReports.length)
+          setReports(Array.isArray(userReports) ? userReports : [])
+        }
       } catch (error) {
-        console.error("[v0] Error loading NOC requests:", error)
+        console.error('Error loading data:', error)
         toast({
-          title: "Error Loading Requests",
-          description: "Failed to load your NOC requests. Please refresh the page.",
+          title: "Error",
+          description: "Failed to load data. Please refresh the page.",
           variant: "destructive",
         })
       } finally {
-        setIsLoading(false)
+        setLoading(false)
       }
     }
 
-    loadNOCRequests()
-  }, [currentUser?.id])
+    loadData()
+  }, [toast])
 
-  // Filter requests based on search and status
-  useEffect(() => {
-    let filtered = nocRequests
+  const getActiveInternships = () => {
+    return internships.filter(internship => {
+      const endDate = new Date(internship.end_date)
+      const now = new Date()
+      return endDate > now
+    })
+  }
 
-    // Filter by search term
-    if (searchTerm.trim()) {
-      const term = searchTerm.toLowerCase()
-      filtered = filtered.filter(
-        (request) => request.company.toLowerCase().includes(term) || request.position.toLowerCase().includes(term),
-      )
-    }
+  const getCompletedInternships = () => {
+    return internships.filter(internship => {
+      const endDate = new Date(internship.end_date)
+      const now = new Date()
+      return endDate <= now
+    })
+  }
 
-    // Filter by status
-    if (statusFilter !== "all") {
-      filtered = filtered.filter((request) => request.status === statusFilter)
-    }
+  const getInternshipReports = (internshipId: number) => {
+    return reports.filter(r => (r.internship_id || r.noc_request_id) === internshipId)
+  }
 
-    setFilteredRequests(filtered)
-  }, [nocRequests, searchTerm, statusFilter])
-
-  // Handle file selection
-  const handleFileSelection = useCallback((files: File[]) => {
-    setSelectedFiles(files)
-  }, [])
-
-  // Reset form
-  const resetForm = useCallback(() => {
-    setSelectedFiles([])
-    setShowForm(false)
-  }, [])
-
-  // Handle NOC Certificate Download
-  const handleDownloadNOC = async (request: NOCRequest) => {
-    if (!currentUser) {
-      toast({
-        title: "Authentication Error",
-        description: "Please log in to download NOC certificate.",
-        variant: "destructive",
-      })
-      return
-    }
-
-    if (request.status !== "approved") {
-      toast({
-        title: "NOC Not Approved",
-        description: "NOC certificate can only be downloaded for approved requests.",
-        variant: "destructive",
-      })
-      return
-    }
-
-    setIsDownloading(true)
-
-    try {
-      // Generate certificate number if not exists
-      const certificateNumber = generateNOCCertificateNumber()
-
-      // Prepare NOC certificate data
-      const nocData: NOCCertificateData = {
-        student: {
-          name: request.studentName || currentUser.name || "Unknown Student",
-          email: request.studentEmail || currentUser.email || "",
-          id: currentUser.id,
-          rollNumber: request.rollNumber || currentUser.rollNumber || "N/A",
-          department: request.department || currentUser.department || "Computer Engineering",
-        },
-        internship: {
-          company: request.company,
-          position: request.position,
-          duration: calculateDuration(request.startDate, request.endDate),
-          startDate: request.startDate,
-          endDate: request.endDate,
-          description: request.description,
-        },
-        approval: {
-          approvedBy: request.approvedBy || "T&P Officer",
-          approvedDate: request.approvedDate || new Date().toISOString(),
-          certificateNumber: certificateNumber,
-        },
-      }
-
-      console.log("[v0] Generating NOC certificate with data:", nocData)
-
-      // Generate and download PDF
-      const result = await generateAndDownloadNOCPDF(nocData)
-
-      if (!result.success) {
-        throw new Error(result.error || "Failed to generate NOC certificate")
-      }
-
-      // Create download link
-      if (result.pdfBlob && result.fileName) {
-        const url = window.URL.createObjectURL(result.pdfBlob)
-        const link = document.createElement("a")
-        link.href = url
-        link.download = result.fileName
-        document.body.appendChild(link)
-        link.click()
-        document.body.removeChild(link)
-        window.URL.revokeObjectURL(url)
-
-        toast({
-          title: "NOC Certificate Downloaded",
-          description: `Your NOC certificate has been downloaded successfully.`,
-        })
-      }
-
-    } catch (error: any) {
-      console.error("[v0] Error downloading NOC certificate:", error)
-      toast({
-        title: "Download Failed",
-        description: error.message || "Failed to download NOC certificate. Please try again.",
-        variant: "destructive",
-      })
-    } finally {
-      setIsDownloading(false)
+  const getReportStats = (internshipId: number) => {
+    const internshipReports = getInternshipReports(internshipId)
+    return {
+      total: internshipReports.length,
+      approved: internshipReports.filter(r => r.status === "approved").length,
+      pending: internshipReports.filter(r => r.status === "pending").length,
+      revisionRequired: internshipReports.filter(r => r.status === "revision_required").length
     }
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
+  const calculateProgress = (internship: Internship) => {
+    const internshipReports = getInternshipReports(internship.id)
+    const startDate = new Date(internship.start_date)
+    const endDate = new Date(internship.end_date)
+    const now = new Date()
+    
+    // Calculate expected weeks based on internship duration
+    const totalWeeks = Math.ceil((endDate.getTime() - startDate.getTime()) / (7 * 24 * 60 * 60 * 1000))
+    const weeksPassed = Math.min(
+      Math.ceil((now.getTime() - startDate.getTime()) / (7 * 24 * 60 * 60 * 1000)),
+      totalWeeks
+    )
+    
+    const expectedReports = Math.max(weeksPassed, 1)
+    return Math.min((internshipReports.length / expectedReports) * 100, 100)
+  }
 
-    console.log("[v0] NOC form submission started")
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      const allowedTypes = ['pdf', 'docx', 'doc']
+      const fileExtension = file.name.split('.').pop()?.toLowerCase()
+      
+      if (!fileExtension || !allowedTypes.includes(fileExtension)) {
+        toast({
+          title: "Invalid File Type",
+          description: "Please upload a PDF or Word document.",
+          variant: "destructive",
+        })
+        e.target.value = ''
+        return
+      }
 
-    if (!currentUser) {
-      toast({
-        title: "Authentication Error",
-        description: "Please log in and try again.",
-        variant: "destructive",
-      })
-      return
+      if (file.size > 10 * 1024 * 1024) {
+        toast({
+          title: "File Too Large",
+          description: "Please upload a file smaller than 10MB.",
+          variant: "destructive",
+        })
+        e.target.value = ''
+        return
+      }
+
+      setUploadedFile(file)
+      setUploadStatus("File selected successfully")
+      console.log("File selected:", file.name, `(${(file.size / 1024).toFixed(1)}KB)`)
     }
+  }
+
+  const handleSubmitReport = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    if (!selectedInternship || !currentUser) return
 
     setIsSubmitting(true)
-    const startTime = Date.now()
-
-    const form = e.target as HTMLFormElement
-    const formData = new FormData(form)
+    setUploadProgress(0)
+    setUploadStatus("Preparing submission...")
+    setRetryCount(0)
+    
+    const formData = new FormData(e.target as HTMLFormElement)
 
     try {
-      const requestData = {
+      const achievementsText = formData.get("achievements") as string
+      const achievements = achievementsText
+        .split("\n")
+        .map(achievement => achievement.trim())
+        .filter(achievement => achievement.length > 0)
+
+      const existingReports = getInternshipReports(selectedInternship.id)
+      const weekNumber = existingReports.length + 1
+
+      setUploadStatus("Validating data...")
+      setUploadProgress(20)
+
+      const reportData = {
         studentId: currentUser.id,
-        studentName: currentUser.name || currentUser.full_name || "Unknown",
+        studentName: currentUser.name,
         studentEmail: currentUser.email,
-        company: (formData.get("company") as string)?.trim(),
-        position: (formData.get("position") as string)?.trim(),
-        startDate: formData.get("startDate") as string,
-        endDate: formData.get("endDate") as string,
-        stipend: (formData.get("stipend") as string)?.trim() || "",
-        description: (formData.get("description") as string)?.trim(),
-        documents: [] as string[],
+        internshipId: selectedInternship.id, // This is the key fix - properly linking to internship
+        week: weekNumber,
+        title: formData.get("title") as string,
+        description: formData.get("description") as string,
+        achievements,
+        comments: (formData.get("comments") as string) || null,
       }
 
-      console.log("[v0] Form data prepared:", requestData)
+      console.log("Report data prepared:", reportData)
+      setUploadStatus(uploadedFile ? "Uploading file..." : "Submitting report...")
+      setUploadProgress(40)
 
-      // Validate required fields
-      if (
-        !requestData.company ||
-        !requestData.position ||
-        !requestData.description ||
-        !requestData.startDate ||
-        !requestData.endDate
-      ) {
-        throw new Error("Please fill in all required fields")
+      // Create the report with file if provided
+      const newReport = await createWeeklyReport(reportData, uploadedFile || undefined)
+      
+      setUploadProgress(90)
+      setUploadStatus("Finalizing...")
+
+      // Normalize the new report data to match interface
+      const normalizedNewReport: WeeklyReport = {
+        ...newReport,
+        internship_id: selectedInternship.id,
+        week: weekNumber,
+        week_number: weekNumber,
+        studentId: currentUser.id,
+        student_id: currentUser.id,
+        studentName: currentUser.name,
+        student_name: currentUser.name,
+        studentEmail: currentUser.email,
+        student_email: currentUser.email,
+        fileName: newReport.file_name || newReport.fileName,
+        fileUrl: newReport.file_url || newReport.fileUrl,
+        fileSize: newReport.file_size || newReport.fileSize,
+        submittedDate: newReport.submitted_date || newReport.submittedDate || new Date().toISOString(),
+        company_name: selectedInternship.company_name,
+        position: selectedInternship.position
       }
 
-      // Validate dates
-      const startDate = new Date(requestData.startDate)
-      const endDate = new Date(requestData.endDate)
-      if (endDate <= startDate) {
-        throw new Error("End date must be after start date")
-      }
-
-      // Handle optional file upload
-      let fileUrl = null
-      if (selectedFiles.length > 0) {
-        const file = selectedFiles[0]
-
-        if (file.size > 10 * 1024 * 1024) {
-          throw new Error("File must be under 10MB. Please compress your PDF.")
-        }
-
-        if (file.type !== "application/pdf") {
-          throw new Error("Only PDF files are allowed.")
-        }
-
-        setSubmitProgress(`⚡ Uploading ${file.name}...`)
-        console.log("[v0] Starting file upload")
-
-        const uploadResult = await uploadFile(file, "noc-documents")
-
-        if (!uploadResult.success || !uploadResult.fileUrl) {
-          throw new Error(uploadResult.error || "File upload failed")
-        }
-
-        fileUrl = uploadResult.fileUrl
-        requestData.documents = [fileUrl]
-        console.log("[v0] File uploaded successfully:", fileUrl)
-      } else {
-        console.log("[v0] No documents to upload, proceeding without files")
-        requestData.documents = []
-      }
-
-      // Create NOC request
-      setSubmitProgress("📝 Creating request...")
-      console.log("[v0] Creating NOC request")
-
-      const newRequest = await createNOCRequest(requestData)
-
-      if (!newRequest?.id) {
-        throw new Error("Request creation failed - no ID returned")
-      }
-
-      const totalTime = Date.now() - startTime
-      console.log("[v0] NOC request created successfully in", totalTime, "ms")
-
-      const normalized: NOCRequest = {
-        id: newRequest.id,
-        company: newRequest.company_name || requestData.company,
-        position: newRequest.position,
-        startDate: newRequest.start_date || requestData.startDate,
-        endDate: newRequest.end_date || requestData.endDate,
-        stipend: newRequest.stipend ? `₹${newRequest.stipend}` : requestData.stipend,
-        submittedDate: newRequest.submitted_date || new Date().toISOString(),
-        approvedDate: newRequest.approved_date,
-        status: newRequest.status || "pending",
-        description: newRequest.description || requestData.description,
-        feedback: newRequest.feedback || "",
-        documents: fileUrl ? [fileUrl] : [],
-        studentName: requestData.studentName,
-        studentEmail: requestData.studentEmail,
-        rollNumber: currentUser.rollNumber,
-        department: currentUser.department,
-      }
-
-      setNocRequests((prev) => [normalized, ...prev])
-      resetForm()
-      form.reset()
+      setReports((prev) => [...prev, normalizedNewReport])
+      setShowForm(false)
+      setUploadedFile(null)
+      setUploadProgress(100)
+      setUploadStatus("Completed successfully!")
 
       toast({
-        title: "✅ Success!",
-        description: `NOC request submitted successfully in ${(totalTime / 1000).toFixed(1)}s. Now under review by T&P Officer.`,
+        title: "Report Submitted Successfully!",
+        description: `Your Week ${weekNumber} report for ${selectedInternship.company_name} has been submitted.`,
       })
 
-      // Refresh data after successful submission
-      setTimeout(async () => {
-        try {
-          const updatedRequests = await getNOCRequestsByStudent(currentUser.id)
-          setNocRequests(updatedRequests || [])
-        } catch (error) {
-          console.error("[v0] Error refreshing NOC requests:", error)
-        }
-      }, 1000)
+      console.log("Report submitted successfully:", normalizedNewReport.id)
+      ;(e.target as HTMLFormElement).reset()
+      
+      // Reset upload states after a delay
+      setTimeout(() => {
+        setUploadProgress(0)
+        setUploadStatus("")
+      }, 2000)
+
     } catch (error: any) {
-      const totalTime = Date.now() - startTime
-      console.error("[v0] NOC submission failed after", totalTime, "ms:", error)
-
-      let errorMessage = "Submission failed. Please try again."
-      const errorMsg = (error.message || "").toLowerCase()
-
-      if (errorMsg.includes("timeout")) {
-        errorMessage = "⏱️ Upload timeout. Try with a smaller file or better internet connection."
-      } else if (errorMsg.includes("network")) {
-        errorMessage = "🌐 Network error. Please check your connection and try again."
-      } else if (errorMsg.includes("size") || errorMsg.includes("large")) {
-        errorMessage = "📄 File too large. Please compress your PDF and try again."
-      } else if (errorMsg.includes("date")) {
-        errorMessage = "📅 Please check your start and end dates."
-      } else if (errorMsg.includes("required") || errorMsg.includes("fill")) {
-        errorMessage = "📝 Please fill in all required fields."
+      console.error('Report submission error:', error)
+      setRetryCount(prev => prev + 1)
+      
+      let errorMessage = "Failed to submit report. Please try again."
+      
+      if (error.message?.includes("timeout")) {
+        errorMessage = "Upload timed out. Please check your connection and try again."
+      } else if (error.message?.includes("File upload failed")) {
+        errorMessage = "File upload failed. Please try with a smaller file or different format."
+      } else if (error.message?.includes("Database error")) {
+        errorMessage = "Database error occurred. Please contact support if this persists."
       }
-
+      
+      setUploadStatus(`Error: ${errorMessage}`)
+      
       toast({
         title: "Submission Failed",
         description: errorMessage,
         variant: "destructive",
+        action: retryCount < 2 ? (
+          <Button 
+            variant="outline" 
+            size="sm"
+            onClick={() => handleSubmitReport(e)}
+            disabled={isSubmitting}
+          >
+            <RefreshCw className="h-4 w-4 mr-2" />
+            Retry
+          </Button>
+        ) : undefined
       })
     } finally {
       setIsSubmitting(false)
-      setSubmitProgress("")
     }
   }
 
-  // Open document viewer
-  const openDocument = async (documentUrl: string) => {
-    try {
-      window.open(documentUrl, "_blank", "noopener,noreferrer")
-    } catch (error) {
+  const handleDownload = async (report: WeeklyReport) => {
+    if (report.fileUrl || report.file_url) {
+      const fileUrl = report.fileUrl || report.file_url || ''
+      const fileName = report.fileName || report.file_name || `week_${report.week || report.week_number}_report.pdf`
+      
+      try {
+        const result = await downloadFile(fileUrl, fileName)
+        if (result.success) {
+          toast({
+            title: "Download Started",
+            description: "Your file is being downloaded.",
+          })
+        } else {
+          throw new Error(result.error || 'Download failed')
+        }
+      } catch (error) {
+        toast({
+          title: "Download Error",
+          description: "Failed to download file. Please try again.",
+          variant: "destructive",
+        })
+      }
+    } else {
       toast({
-        title: "Cannot open document",
-        description: "Unable to open the document. Please try again.",
+        title: "Download Error",
+        description: "File not available for download.",
         variant: "destructive",
       })
     }
+  }
+
+  const formatDate = (dateString: string): string => {
+    if (!dateString) return 'Unknown date'
+    try {
+      return new Date(dateString).toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric'
+      })
+    } catch (error) {
+      return 'Invalid date'
+    }
+  }
+
+  const getStatusConfig = (status: string) => {
+    switch (status) {
+      case "approved":
+        return {
+          variant: "default" as const,
+          icon: <CheckCircle className="h-3 w-3" />,
+          text: "Approved",
+          color: "text-green-600"
+        }
+      case "revision_required":
+        return {
+          variant: "destructive" as const,
+          icon: <AlertCircle className="h-3 w-3" />,
+          text: "Needs Revision",
+          color: "text-orange-600"
+        }
+      default:
+        return {
+          variant: "secondary" as const,
+          icon: <Clock className="h-3 w-3" />,
+          text: "Under Review",
+          color: "text-blue-600"
+        }
+    }
+  }
+
+  const getGradeColor = (grade: string) => {
+    if (grade === 'A' || grade === 'A+') return 'text-green-600 bg-green-100'
+    if (grade === 'B' || grade === 'B+') return 'text-blue-600 bg-blue-100'
+    if (grade === 'C') return 'text-yellow-600 bg-yellow-100'
+    return 'text-gray-600 bg-gray-100'
+  }
+
+  const formatFileSize = (bytes: number) => {
+    if (bytes < 1024) return bytes + ' B'
+    if (bytes < 1024 * 1024) return Math.round(bytes / 1024) + ' KB'
+    return Math.round(bytes / (1024 * 1024)) + ' MB'
+  }
+
+  const filteredReports = selectedInternship 
+    ? getInternshipReports(selectedInternship.id).filter(report => {
+        const matchesSearch = report.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                             report.description.toLowerCase().includes(searchTerm.toLowerCase())
+        const matchesStatus = statusFilter === "all" || report.status === statusFilter
+        return matchesSearch && matchesStatus
+      })
+    : []
+
+  const activeInternships = getActiveInternships()
+  const completedInternships = getCompletedInternships()
+
+  // Show loading state
+  if (loading || !currentUser) {
+    return (
+      <AuthGuard allowedRoles={["student"]}>
+        <DashboardLayout>
+          <div className="space-y-6">
+            <div className="flex justify-center items-center h-64">
+              <div className="text-center">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-4 border-blue-600 mx-auto"></div>
+                <p className="mt-4 text-gray-600 font-medium">Loading your reports...</p>
+                <p className="text-sm text-gray-400">Please wait a moment</p>
+              </div>
+            </div>
+          </div>
+        </DashboardLayout>
+      </AuthGuard>
+    )
   }
 
   return (
     <AuthGuard allowedRoles={["student"]}>
       <DashboardLayout>
         <div className="space-y-8">
-          {/* Header Section */}
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900">NOC Requests</h1>
-              <p className="text-gray-600 mt-1">
-                Manage your No Objection Certificate requests for external internships
-              </p>
-            </div>
-            <Button
-              onClick={() => setShowForm(!showForm)}
-              className="rounded-xl px-6 py-2.5 bg-blue-600 hover:bg-blue-700 transition-colors"
-            >
-              <Plus className="mr-2 h-4 w-4" />
-              New NOC Request
-            </Button>
-          </div>
-
-          {/* Search and Filter Section */}
-          <div className="flex flex-col sm:flex-row gap-4">
-            <div className="flex-1">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                <Input
-                  placeholder="Search by company name or position..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10 rounded-lg border-gray-300"
-                />
+          {/* Header */}
+          <div className="bg-gradient-to-r from-blue-600 via-purple-600 to-indigo-600 rounded-xl p-6 text-white shadow-lg">
+            <div className="flex justify-between items-start">
+              <div>
+                <div className="flex items-center gap-3 mb-2">
+                  <BookOpen className="h-8 w-8" />
+                  <h1 className="text-3xl font-bold">Weekly Reports</h1>
+                </div>
+                <p className="text-blue-100 mb-4">Track your internship progress by company</p>
+                <div className="flex items-center gap-4 text-sm">
+                  <div className="flex items-center gap-1">
+                    <User className="h-4 w-4" />
+                    <span>{currentUser.name}</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <Hash className="h-4 w-4" />
+                    <span>{currentUser.rollNumber}</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <Building className="h-4 w-4" />
+                    <span>{currentUser.department}</span>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="flex gap-3">
+                <Button
+                  variant={viewMode === "internships" ? "secondary" : "outline"}
+                  onClick={() => {
+                    setViewMode("internships")
+                    setSelectedInternship(null)
+                  }}
+                  className="bg-white/10 hover:bg-white/20 text-white border-white/30"
+                >
+                  <Briefcase className="h-4 w-4 mr-2" />
+                  View Internships
+                </Button>
+                
+                {selectedInternship && activeInternships.some(i => i.id === selectedInternship.id) && (
+                  <Button 
+                    onClick={() => setShowForm(!showForm)} 
+                    disabled={isSubmitting}
+                    className="bg-white text-blue-600 hover:bg-blue-50 font-semibold shadow-lg"
+                    size="lg"
+                  >
+                    <Plus className="mr-2 h-5 w-5" />
+                    New Report
+                  </Button>
+                )}
               </div>
             </div>
-            <div className="flex gap-2">
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-[140px] rounded-lg border-gray-300">
-                  <Filter className="h-4 w-4 mr-2" />
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Status</SelectItem>
-                  <SelectItem value="pending">Pending</SelectItem>
-                  <SelectItem value="approved">Approved</SelectItem>
-                  <SelectItem value="rejected">Rejected</SelectItem>
-                </SelectContent>
-              </Select>
+          </div>
+
+          {/* Internships Overview */}
+          {viewMode === "internships" && (
+            <div className="space-y-6">
+              {/* Active Internships */}
+              {activeInternships.length > 0 && (
+                <div>
+                  <div className="flex items-center gap-3 mb-4">
+                    <PlayCircle className="h-6 w-6 text-green-600" />
+                    <h2 className="text-2xl font-bold text-gray-900">Active Internships</h2>
+                    <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+                      {activeInternships.length} Active
+                    </Badge>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {activeInternships.map((internship) => {
+                      const stats = getReportStats(internship.id)
+                      const progress = calculateProgress(internship)
+                      
+                      return (
+                        <Card key={internship.id} className="shadow-sm hover:shadow-md transition-all duration-200 border-l-4 border-l-green-500">
+                          <CardHeader className="pb-3">
+                            <div className="flex items-start justify-between">
+                              <div className="flex-1">
+                                <CardTitle className="text-lg font-semibold text-gray-900 mb-1">
+                                  {internship.company_name}
+                                </CardTitle>
+                                <CardDescription className="text-base text-gray-700 mb-2">
+                                  {internship.position}
+                                </CardDescription>
+                                <div className="flex flex-wrap gap-3 text-sm text-gray-600">
+                                  <div className="flex items-center gap-1">
+                                    <Calendar className="h-4 w-4" />
+                                    <span>{formatDate(internship.start_date)} - {formatDate(internship.end_date)}</span>
+                                  </div>
+                                  <div className="flex items-center gap-1">
+                                    <Clock className="h-4 w-4" />
+                                    <span>{internship.duration}</span>
+                                  </div>
+                                </div>
+                              </div>
+                              <Badge className="bg-green-100 text-green-800 border-green-200">
+                                <Activity className="h-3 w-3 mr-1" />
+                                Active
+                              </Badge>
+                            </div>
+                          </CardHeader>
+                          
+                          <CardContent className="pt-0">
+                            <div className="space-y-4">
+                              <div className="grid grid-cols-3 gap-4 text-center">
+                                <div className="bg-blue-50 rounded-lg p-3">
+                                  <p className="text-2xl font-bold text-blue-600">{stats.total}</p>
+                                  <p className="text-xs text-gray-600">Total Reports</p>
+                                </div>
+                                <div className="bg-green-50 rounded-lg p-3">
+                                  <p className="text-2xl font-bold text-green-600">{stats.approved}</p>
+                                  <p className="text-xs text-gray-600">Approved</p>
+                                </div>
+                                <div className="bg-orange-50 rounded-lg p-3">
+                                  <p className="text-2xl font-bold text-orange-600">{stats.pending}</p>
+                                  <p className="text-xs text-gray-600">Pending</p>
+                                </div>
+                              </div>
+                              
+                              <div className="space-y-2">
+                                <div className="flex justify-between items-center">
+                                  <span className="text-sm text-gray-600">Progress</span>
+                                  <span className="text-sm font-medium text-gray-900">{Math.round(progress)}%</span>
+                                </div>
+                                <Progress value={progress} className="h-2" />
+                              </div>
+                              
+                              <div className="flex gap-2">
+                                <Button
+                                  onClick={() => {
+                                    setSelectedInternship(internship)
+                                    setViewMode("reports")
+                                  }}
+                                  className="flex-1"
+                                  size="sm"
+                                >
+                                  <Eye className="h-4 w-4 mr-2" />
+                                  View Reports
+                                </Button>
+                                <Button
+                                  onClick={() => {
+                                    setSelectedInternship(internship)
+                                    setShowForm(true)
+                                  }}
+                                  variant="outline"
+                                  size="sm"
+                                >
+                                  <Plus className="h-4 w-4 mr-2" />
+                                  Add Report
+                                </Button>
+                              </div>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Completed Internships */}
+              {completedInternships.length > 0 && (
+                <div>
+                  <div className="flex items-center gap-3 mb-4">
+                    <StopCircle className="h-6 w-6 text-gray-600" />
+                    <h2 className="text-2xl font-bold text-gray-900">Completed Internships</h2>
+                    <Badge variant="outline" className="bg-gray-50 text-gray-700 border-gray-200">
+                      {completedInternships.length} Completed
+                    </Badge>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {completedInternships.map((internship) => {
+                      const stats = getReportStats(internship.id)
+                      
+                      return (
+                        <Card key={internship.id} className="shadow-sm hover:shadow-md transition-all duration-200 border-l-4 border-l-gray-400">
+                          <CardHeader className="pb-3">
+                            <div className="flex items-start justify-between">
+                              <div className="flex-1">
+                                <CardTitle className="text-lg font-semibold text-gray-900 mb-1">
+                                  {internship.company_name}
+                                </CardTitle>
+                                <CardDescription className="text-base text-gray-700 mb-2">
+                                  {internship.position}
+                                </CardDescription>
+                                <div className="flex flex-wrap gap-3 text-sm text-gray-600">
+                                  <div className="flex items-center gap-1">
+                                    <Calendar className="h-4 w-4" />
+                                    <span>{formatDate(internship.start_date)} - {formatDate(internship.end_date)}</span>
+                                  </div>
+                                  <div className="flex items-center gap-1">
+                                    <Clock className="h-4 w-4" />
+                                    <span>{internship.duration}</span>
+                                  </div>
+                                </div>
+                              </div>
+                              <Badge variant="secondary" className="bg-gray-100 text-gray-800">
+                                <CheckCircle className="h-3 w-3 mr-1" />
+                                Completed
+                              </Badge>
+                            </div>
+                          </CardHeader>
+                          
+                          <CardContent className="pt-0">
+                            <div className="space-y-4">
+                              <div className="grid grid-cols-3 gap-4 text-center">
+                                <div className="bg-blue-50 rounded-lg p-3">
+                                  <p className="text-2xl font-bold text-blue-600">{stats.total}</p>
+                                  <p className="text-xs text-gray-600">Total Reports</p>
+                                </div>
+                                <div className="bg-green-50 rounded-lg p-3">
+                                  <p className="text-2xl font-bold text-green-600">{stats.approved}</p>
+                                  <p className="text-xs text-gray-600">Approved</p>
+                                </div>
+                                <div className="bg-purple-50 rounded-lg p-3">
+                                  <p className="text-2xl font-bold text-purple-600">{internship.duration}</p>
+                                  <p className="text-xs text-gray-600">Duration</p>
+                                </div>
+                              </div>
+                              
+                              <div className="space-y-2">
+                                <div className="flex justify-between items-center">
+                                  <span className="text-sm text-gray-600">Completion</span>
+                                  <span className="text-sm font-medium text-gray-900">100%</span>
+                                </div>
+                                <Progress value={100} className="h-2" />
+                              </div>
+                              
+                              <Button
+                                onClick={() => {
+                                  setSelectedInternship(internship)
+                                  setViewMode("reports")
+                                }}
+                                className="w-full"
+                                variant="outline"
+                                size="sm"
+                              >
+                                <BarChart3 className="h-4 w-4 mr-2" />
+                                View Report History
+                              </Button>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* No Internships State */}
+              {internships.length === 0 && (
+                <Card className="shadow-sm">
+                  <CardContent className="p-12 text-center">
+                    <div className="mx-auto w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center mb-6">
+                      <Briefcase className="h-12 w-12 text-gray-400" />
+                    </div>
+                    <h3 className="text-xl font-semibold text-gray-900 mb-2">No Internships Found</h3>
+                    <p className="text-gray-600 mb-6 max-w-md mx-auto">
+                      You haven't been approved for any internships yet. Apply for internship opportunities to start submitting weekly reports.
+                    </p>
+                    <Button 
+                      size="lg"
+                      className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
+                      onClick={() => window.location.href = '/dashboard/student/opportunities'}
+                    >
+                      <Search className="mr-2 h-5 w-5" />
+                      Browse Opportunities
+                    </Button>
+                  </CardContent>
+                </Card>
+              )}
             </div>
-          </div>
-
-          {/* Stats Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <Card className="border-0 shadow-sm bg-gradient-to-r from-blue-50 to-blue-100">
-              <CardContent className="p-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-blue-700">Total Requests</p>
-                    <p className="text-2xl font-bold text-blue-900">{nocRequests.length}</p>
-                  </div>
-                  <FileText className="h-8 w-8 text-blue-600" />
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="border-0 shadow-sm bg-gradient-to-r from-amber-50 to-amber-100">
-              <CardContent className="p-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-amber-700">Pending</p>
-                    <p className="text-2xl font-bold text-amber-900">
-                      {nocRequests.filter((r) => r.status === "pending").length}
-                    </p>
-                  </div>
-                  <Clock className="h-8 w-8 text-amber-600" />
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="border-0 shadow-sm bg-gradient-to-r from-emerald-50 to-emerald-100">
-              <CardContent className="p-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-emerald-700">Approved</p>
-                    <p className="text-2xl font-bold text-emerald-900">
-                      {nocRequests.filter((r) => r.status === "approved").length}
-                    </p>
-                  </div>
-                  <CheckCircle2 className="h-8 w-8 text-emerald-600" />
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="border-0 shadow-sm bg-gradient-to-r from-rose-50 to-rose-100">
-              <CardContent className="p-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-rose-700">Rejected</p>
-                    <p className="text-2xl font-bold text-rose-900">
-                      {nocRequests.filter((r) => r.status === "rejected").length}
-                    </p>
-                  </div>
-                  <XCircle className="h-8 w-8 text-rose-600" />
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Create Form */}
-          {showForm && (
-            <Card className="shadow-lg border-0 bg-white">
-              <CardHeader className="pb-6">
-                <CardTitle className="text-xl text-gray-900">Submit New NOC Request</CardTitle>
-                <CardDescription className="text-gray-600">
-                  Request NOC for an externally secured internship opportunity
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <form onSubmit={handleSubmit} className="space-y-6">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="space-y-2">
-                      <Label htmlFor="company" className="text-sm font-medium text-gray-700">
-                        Company Name *
-                      </Label>
-                      <Input
-                        id="company"
-                        name="company"
-                        placeholder="e.g., Google, Microsoft, Amazon"
-                        required
-                        className="rounded-lg border-gray-300 focus:border-blue-500"
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="position" className="text-sm font-medium text-gray-700">
-                        Position *
-                      </Label>
-                      <Input
-                        id="position"
-                        name="position"
-                        placeholder="e.g., Software Engineering Intern"
-                        required
-                        className="rounded-lg border-gray-300 focus:border-blue-500"
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="startDate" className="text-sm font-medium text-gray-700">
-                        Start Date *
-                      </Label>
-                      <Input
-                        id="startDate"
-                        type="date"
-                        name="startDate"
-                        required
-                        className="rounded-lg border-gray-300 focus:border-blue-500"
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="endDate" className="text-sm font-medium text-gray-700">
-                        End Date *
-                      </Label>
-                      <Input
-                        id="endDate"
-                        type="date"
-                        name="endDate"
-                        required
-                        className="rounded-lg border-gray-300 focus:border-blue-500"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="stipend" className="text-sm font-medium text-gray-700">
-                      Stipend (Optional)
-                    </Label>
-                    <Input
-                      id="stipend"
-                      name="stipend"
-                      placeholder="e.g., ₹15,000/month, $500/month, or Unpaid"
-                      className="rounded-lg border-gray-300 focus:border-blue-500"
-                    />
-                    <p className="text-xs text-gray-500">Leave blank if unpaid or stipend amount is not disclosed</p>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="description" className="text-sm font-medium text-gray-700">
-                      Job Description *
-                    </Label>
-                    <Textarea
-                      id="description"
-                      name="description"
-                      placeholder="Describe the internship role, responsibilities, and key learning outcomes..."
-                      rows={4}
-                      required
-                      className="rounded-lg border-gray-300 focus:border-blue-500"
-                    />
-                  </div>
-
-                  <div className="space-y-3">
-                    <Label className="text-sm font-medium text-gray-700">Supporting Documents (Optional)</Label>
-                    <UploadZone onFiles={handleFileSelection} busy={isSubmitting} selectedFiles={selectedFiles} />
-                    <p className="text-xs text-gray-500">
-                      Upload offer letter or other supporting documents. This is optional but recommended for faster
-                      processing.
-                    </p>
-                  </div>
-
-                  <div className="flex gap-3 pt-4 border-t">
-                    <Button
-                      type="submit"
-                      disabled={isSubmitting}
-                      className="rounded-lg px-6 py-2.5 bg-blue-600 hover:bg-blue-700 transition-colors min-w-[160px]"
-                    >
-                      {isSubmitting ? (
-                        <div className="flex items-center gap-2">
-                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                          <span className="text-sm">{submitProgress || "Submitting..."}</span>
-                        </div>
-                      ) : (
-                        <>
-                          <CheckCircle2 className="mr-2 h-4 w-4" />
-                          Submit Request
-                        </>
-                      )}
-                    </Button>
-                    <Button
-                      variant="outline"
-                      type="button"
-                      onClick={resetForm}
-                      disabled={isSubmitting}
-                      className="rounded-lg px-6 py-2.5 border-gray-300 bg-transparent"
-                    >
-                      <X className="mr-2 h-4 w-4" />
-                      Cancel
-                    </Button>
-                  </div>
-                </form>
-              </CardContent>
-            </Card>
           )}
 
-          {/* NOC Requests List */}
-          <div className="space-y-6">
-            {filteredRequests.length > 0 ? (
-              <>
-                <div className="flex items-center justify-between">
-                  <h2 className="text-xl font-semibold text-gray-900">
-                    {searchTerm || statusFilter !== "all"
-                      ? `Filtered NOC Requests (${filteredRequests.length})`
-                      : "Your NOC Requests"}
-                  </h2>
-                  {(searchTerm || statusFilter !== "all") && (
-                    <Button
-                      variant="outline"
-                      size="sm"
+          {/* Selected Internship Reports View */}
+          {viewMode === "reports" && selectedInternship && (
+            <div className="space-y-6">
+              {/* Breadcrumb */}
+              <div className="flex items-center gap-2 text-sm text-gray-600">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setViewMode("internships")
+                    setSelectedInternship(null)
+                  }}
+                  className="p-0 h-auto text-blue-600 hover:text-blue-800"
+                >
+                  Internships
+                </Button>
+                <ChevronRight className="h-4 w-4" />
+                <span className="font-medium text-gray-900">{selectedInternship.company_name}</span>
+              </div>
+
+              {/* Selected Internship Header */}
+              <Card className="shadow-sm bg-gradient-to-r from-blue-50 to-purple-50 border-blue-200">
+                <CardContent className="p-6">
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-3 mb-2">
+                        <Building className="h-6 w-6 text-blue-600" />
+                        <h2 className="text-2xl font-bold text-gray-900">{selectedInternship.company_name}</h2>
+                        <Badge className={activeInternships.some(i => i.id === selectedInternship.id) ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-800"}>
+                          {activeInternships.some(i => i.id === selectedInternship.id) ? (
+                            <>
+                              <Activity className="h-3 w-3 mr-1" />
+                              Active
+                            </>
+                          ) : (
+                            <>
+                              <CheckCircle className="h-3 w-3 mr-1" />
+                              Completed
+                            </>
+                          )}
+                        </Badge>
+                      </div>
+                      <p className="text-lg text-gray-700 mb-3">{selectedInternship.position}</p>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                        <div className="flex items-center gap-2">
+                          <Calendar className="h-4 w-4 text-gray-500" />
+                          <span>{formatDate(selectedInternship.start_date)} - {formatDate(selectedInternship.end_date)}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Clock className="h-4 w-4 text-gray-500" />
+                          <span>{selectedInternship.duration}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Award className="h-4 w-4 text-gray-500" />
+                          <span>{getReportStats(selectedInternship.id).approved} reports approved</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <TrendingUp className="h-4 w-4 text-gray-500" />
+                          <span>{Math.round(calculateProgress(selectedInternship))}% progress</span>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {activeInternships.some(i => i.id === selectedInternship.id) && (
+                      <Button 
+                        onClick={() => setShowForm(!showForm)} 
+                        disabled={isSubmitting}
+                        size="lg"
+                      >
+                        <Plus className="mr-2 h-5 w-5" />
+                        Add Report
+                      </Button>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Submit New Report Form */}
+              {showForm && (
+                <Card className="shadow-lg border-2 border-blue-100">
+                  <CardHeader className="bg-gradient-to-r from-blue-50 to-indigo-50">
+                    <CardTitle className="flex items-center gap-3">
+                      <Upload className="h-6 w-6 text-blue-600" />
+                      Submit Weekly Report - Week {getInternshipReports(selectedInternship.id).length + 1}
+                    </CardTitle>
+                    <CardDescription>
+                      Upload your progress report for {selectedInternship.company_name}
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="p-6">
+                    <form onSubmit={handleSubmitReport} className="space-y-6">
+                      {/* Upload Progress Indicator */}
+                      {(isSubmitting || uploadProgress > 0) && (
+                        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                          <div className="flex items-center gap-3 mb-2">
+                            {isSubmitting ? (
+                              <Loader2 className="h-5 w-5 text-blue-600 animate-spin" />
+                            ) : uploadProgress === 100 ? (
+                              <CheckIcon className="h-5 w-5 text-green-600" />
+                            ) : (
+                              <Upload className="h-5 w-5 text-blue-600" />
+                            )}
+                            <span className="font-medium text-blue-900">
+                              {uploadStatus || "Processing..."}
+                            </span>
+                          </div>
+                          {uploadProgress > 0 && (
+                            <Progress value={uploadProgress} className="h-2 bg-blue-200" />
+                          )}
+                        </div>
+                      )}
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="space-y-2">
+                          <Label htmlFor="title" className="flex items-center gap-2">
+                            <Target className="h-4 w-4" />
+                            Report Title *
+                          </Label>
+                          <Input 
+                            id="title" 
+                            name="title" 
+                            placeholder="e.g., API Development and Testing" 
+                            required 
+                            disabled={isSubmitting}
+                            className="transition-colors focus:border-blue-400"
+                          />
+                        </div>
+                        
+                        <div className="space-y-2">
+                          <Label htmlFor="report-file" className="flex items-center gap-2">
+                            <FileText className="h-4 w-4" />
+                            Report File (PDF/DOCX)
+                          </Label>
+                          <Input 
+                            id="report-file" 
+                            type="file" 
+                            accept=".pdf,.docx,.doc"
+                            onChange={handleFileChange}
+                            disabled={isSubmitting}
+                            className="transition-colors"
+                          />
+                          {uploadedFile && (
+                            <div className="flex items-center gap-2 p-2 bg-green-50 rounded-lg">
+                              <CheckCircle className="h-4 w-4 text-green-600" />
+                              <span className="text-sm text-green-700">
+                                {uploadedFile.name} ({formatFileSize(uploadedFile.size)})
+                              </span>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => {
+                                  setUploadedFile(null)
+                                  const fileInput = document.getElementById('report-file') as HTMLInputElement
+                                  if (fileInput) fileInput.value = ''
+                                }}
+                                disabled={isSubmitting}
+                                className="h-6 w-6 p-0 hover:bg-green-100"
+                              >
+                                <XIcon className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <Label htmlFor="description" className="flex items-center gap-2">
+                          <BookOpen className="h-4 w-4" />
+                          Work Description *
+                        </Label>
+                        <Textarea
+                          id="description"
+                          name="description"
+                          placeholder="Describe the tasks completed, challenges faced, and learning outcomes during this week..."
+                          rows={4}
+                          required
+                          disabled={isSubmitting}
+                          className="transition-colors focus:border-blue-400"
+                        />
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <Label htmlFor="achievements" className="flex items-center gap-2">
+                          <Award className="h-4 w-4" />
+                          Key Achievements *
+                        </Label>
+                        <Textarea
+                          id="achievements"
+                          name="achievements"
+                          placeholder="• Completed user authentication module&#10;• Fixed 5 critical bugs&#10;• Learned Redux state management"
+                          rows={3}
+                          required
+                          disabled={isSubmitting}
+                          className="transition-colors focus:border-blue-400"
+                        />
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <Label htmlFor="comments" className="flex items-center gap-2">
+                          <MessageSquare className="h-4 w-4" />
+                          Additional Comments (Optional)
+                        </Label>
+                        <Textarea
+                          id="comments"
+                          name="comments"
+                          placeholder="Any additional notes, questions for your mentor, or feedback..."
+                          rows={2}
+                          disabled={isSubmitting}
+                          className="transition-colors focus:border-blue-400"
+                        />
+                      </div>
+                      
+                      <div className="flex gap-3 pt-4">
+                        <Button type="submit" disabled={isSubmitting} className="flex-1 md:flex-none" size="lg">
+                          {isSubmitting ? (
+                            <>
+                              <Loader2 className="animate-spin h-4 w-4 mr-2" />
+                              Submitting...
+                            </>
+                          ) : (
+                            <>
+                              <Upload className="mr-2 h-4 w-4" />
+                              Submit Report
+                            </>
+                          )}
+                        </Button>
+                        <Button 
+                          variant="outline" 
+                          type="button" 
+                          onClick={() => {
+                            setShowForm(false)
+                            setUploadedFile(null)
+                            setUploadProgress(0)
+                            setUploadStatus("")
+                          }}
+                          disabled={isSubmitting}
+                          size="lg"
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    </form>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Search and Filter */}
+              <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
+                <div className="flex items-center gap-4 w-full sm:w-auto">
+                  <div className="relative flex-1 sm:w-64">
+                    <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                    <Input
+                      placeholder="Search reports..."
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      className="pl-10"
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Filter className="h-4 w-4 text-gray-500" />
+                    <select
+                      value={statusFilter}
+                      onChange={(e) => setStatusFilter(e.target.value)}
+                      className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="all">All Status</option>
+                      <option value="pending">Under Review</option>
+                      <option value="approved">Approved</option>
+                      <option value="revision_required">Needs Revision</option>
+                    </select>
+                  </div>
+                </div>
+                <Badge variant="secondary" className="text-sm">
+                  {filteredReports.length} {filteredReports.length === 1 ? 'report' : 'reports'} found
+                </Badge>
+              </div>
+
+              {/* Reports Statistics */}
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <Card className="border-l-4 border-l-blue-500">
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-gray-600">Total Reports</p>
+                        <p className="text-2xl font-bold text-gray-900">{getInternshipReports(selectedInternship.id).length}</p>
+                      </div>
+                      <FileText className="h-8 w-8 text-blue-600" />
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card className="border-l-4 border-l-green-500">
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-gray-600">Approved</p>
+                        <p className="text-2xl font-bold text-green-600">{getReportStats(selectedInternship.id).approved}</p>
+                      </div>
+                      <CheckCircle className="h-8 w-8 text-green-600" />
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card className="border-l-4 border-l-orange-500">
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-gray-600">Under Review</p>
+                        <p className="text-2xl font-bold text-orange-600">{getReportStats(selectedInternship.id).pending}</p>
+                      </div>
+                      <Clock className="h-8 w-8 text-orange-600" />
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card className="border-l-4 border-l-purple-500">
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-gray-600">Progress</p>
+                        <p className="text-2xl font-bold text-purple-600">{Math.round(calculateProgress(selectedInternship))}%</p>
+                      </div>
+                      <TrendingUp className="h-8 w-8 text-purple-600" />
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Reports List */}
+              <div className="space-y-4">
+                {filteredReports.map((report) => {
+                  const statusConfig = getStatusConfig(report.status)
+                  return (
+                    <Card key={report.id} className="shadow-sm hover:shadow-md transition-all duration-200">
+                      <CardContent className="p-6">
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-3 mb-3">
+                              <div className="h-10 w-10 bg-blue-100 rounded-full flex items-center justify-center">
+                                <span className="text-lg font-bold text-blue-600">{report.week_number || report.week}</span>
+                              </div>
+                              <div className="flex-1">
+                                <h3 className="text-lg font-semibold text-gray-900 mb-1">{report.title}</h3>
+                                <div className="flex items-center gap-2">
+                                  <Badge variant={statusConfig.variant} className="flex items-center gap-1">
+                                    {statusConfig.icon}
+                                    {statusConfig.text}
+                                  </Badge>
+                                  {report.grade && (
+                                    <Badge variant="outline" className={`${getGradeColor(report.grade)} font-bold`}>
+                                      <Star className="h-3 w-3 mr-1" />
+                                      {report.grade}
+                                    </Badge>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                            
+                            <div className="flex items-center gap-4 text-sm text-gray-600 mb-3">
+                              <div className="flex items-center gap-1">
+                                <Calendar className="h-4 w-4" />
+                                <span>Submitted: {formatDate(report.submitted_date || report.submittedDate || '')}</span>
+                              </div>
+                              {(report.file_name || report.fileName) && (
+                                <div className="flex items-center gap-1">
+                                  <FileText className="h-4 w-4" />
+                                  <span>{report.file_name || report.fileName}</span>
+                                </div>
+                              )}
+                              {report.achievements && report.achievements.length > 0 && (
+                                <div className="flex items-center gap-1">
+                                  <Award className="h-4 w-4" />
+                                  <span>{report.achievements.length} achievements</span>
+                                </div>
+                              )}
+                            </div>
+                            
+                            <p className="text-gray-700 line-clamp-2 mb-3">{report.description}</p>
+
+                            {report.feedback && (
+                              <div className="bg-blue-50 border border-blue-200 p-3 rounded-lg">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <MessageSquare className="h-4 w-4 text-blue-600" />
+                                  <span className="text-sm font-medium text-blue-600">Mentor Feedback:</span>
+                                </div>
+                                <p className="text-sm text-blue-800">{report.feedback}</p>
+                              </div>
+                            )}
+                          </div>
+                          
+                          <div className="flex flex-col gap-2 ml-6">
+                            <Dialog>
+                              <DialogTrigger asChild>
+                                <Button variant="outline" size="sm">
+                                  <Eye className="h-4 w-4 mr-1" />
+                                  View Details
+                                </Button>
+                              </DialogTrigger>
+                              <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+                                <DialogHeader>
+                                  <DialogTitle className="flex items-center gap-3">
+                                    <div className="h-10 w-10 bg-blue-100 rounded-full flex items-center justify-center">
+                                      <span className="text-lg font-bold text-blue-600">{report.week_number || report.week}</span>
+                                    </div>
+                                    Week {report.week_number || report.week}: {report.title}
+                                  </DialogTitle>
+                                  <DialogDescription>
+                                    {selectedInternship.company_name} - {selectedInternship.position}
+                                  </DialogDescription>
+                                </DialogHeader>
+                                
+                                <div className="space-y-6 mt-6">
+                                  <div className="flex items-center gap-4">
+                                    <Badge variant={statusConfig.variant} className="flex items-center gap-1">
+                                      {statusConfig.icon}
+                                      {statusConfig.text}
+                                    </Badge>
+                                    {report.grade && (
+                                      <Badge variant="outline" className={`${getGradeColor(report.grade)} text-lg px-3 py-1`}>
+                                        <Star className="h-4 w-4 mr-1" />
+                                        Grade: {report.grade}
+                                      </Badge>
+                                    )}
+                                  </div>
+
+                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-gray-50 rounded-lg">
+                                    <div className="flex items-center gap-2">
+                                      <Building className="h-4 w-4 text-gray-500" />
+                                      <span className="text-sm text-gray-600">Company:</span>
+                                      <span className="font-medium">{selectedInternship.company_name}</span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      <Briefcase className="h-4 w-4 text-gray-500" />
+                                      <span className="text-sm text-gray-600">Position:</span>
+                                      <span className="font-medium">{selectedInternship.position}</span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      <Calendar className="h-4 w-4 text-gray-500" />
+                                      <span className="text-sm text-gray-600">Submitted:</span>
+                                      <span className="font-medium">{formatDate(report.submitted_date || report.submittedDate || '')}</span>
+                                    </div>
+                                    {(report.file_name || report.fileName) && (
+                                      <div className="flex items-center gap-2">
+                                        <FileText className="h-4 w-4 text-gray-500" />
+                                        <span className="text-sm text-gray-600">File:</span>
+                                        <span className="font-medium">{report.file_name || report.fileName}</span>
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  <div className="space-y-3">
+                                    <h4 className="font-semibold text-gray-900 flex items-center gap-2">
+                                      <BookOpen className="h-5 w-5 text-blue-600" />
+                                      Work Description
+                                    </h4>
+                                    <div className="p-4 bg-white border border-gray-200 rounded-lg">
+                                      <p className="text-gray-700 whitespace-pre-wrap">{report.description}</p>
+                                    </div>
+                                  </div>
+
+                                  {report.achievements && report.achievements.length > 0 && (
+                                    <div className="space-y-3">
+                                      <h4 className="font-semibold text-gray-900 flex items-center gap-2">
+                                        <Award className="h-5 w-5 text-yellow-600" />
+                                        Key Achievements ({report.achievements.length})
+                                      </h4>
+                                      <div className="p-4 bg-white border border-gray-200 rounded-lg">
+                                        <ul className="space-y-2">
+                                          {report.achievements.map((achievement, index) => (
+                                            <li key={index} className="flex items-start gap-2">
+                                              <CheckCircle className="h-4 w-4 text-green-600 mt-0.5 flex-shrink-0" />
+                                              <span className="text-gray-700">{achievement}</span>
+                                            </li>
+                                          ))}
+                                        </ul>
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {report.comments && (
+                                    <div className="space-y-3">
+                                      <h4 className="font-semibold text-gray-900 flex items-center gap-2">
+                                        <MessageSquare className="h-5 w-5 text-purple-600" />
+                                        Additional Comments
+                                      </h4>
+                                      <div className="p-4 bg-white border border-gray-200 rounded-lg">
+                                        <p className="text-gray-700 whitespace-pre-wrap">{report.comments}</p>
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {report.feedback && (
+                                    <div className="space-y-3">
+                                      <h4 className="font-semibold text-gray-900 flex items-center gap-2">
+                                        <MessageSquare className="h-5 w-5 text-blue-600" />
+                                        Mentor Feedback
+                                      </h4>
+                                      <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                                        <p className="text-blue-800 whitespace-pre-wrap">{report.feedback}</p>
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  <div className="flex gap-3 pt-4 border-t">
+                                    {(report.file_url || report.fileUrl) && (
+                                      <Button 
+                                        variant="outline" 
+                                        onClick={() => handleDownload(report)}
+                                        className="flex-1"
+                                      >
+                                        <Download className="h-4 w-4 mr-2" />
+                                        Download File
+                                      </Button>
+                                    )}
+                                    {report.status === "revision_required" && (
+                                      <Button className="flex-1">
+                                        <Upload className="h-4 w-4 mr-2" />
+                                        Resubmit Report
+                                      </Button>
+                                    )}
+                                  </div>
+                                </div>
+                              </DialogContent>
+                            </Dialog>
+                            
+                            {(report.file_url || report.fileUrl) && (
+                              <Button 
+                                variant="outline" 
+                                size="sm" 
+                                onClick={() => handleDownload(report)}
+                              >
+                                <Download className="h-4 w-4 mr-1" />
+                                Download
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )
+                })}
+              </div>
+
+              {/* Empty State for Reports */}
+              {filteredReports.length === 0 && getInternshipReports(selectedInternship.id).length === 0 && (
+                <Card className="shadow-sm">
+                  <CardContent className="p-12 text-center">
+                    <div className="mx-auto w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center mb-6">
+                      <FileText className="h-12 w-12 text-gray-400" />
+                    </div>
+                    <h3 className="text-xl font-semibold text-gray-900 mb-2">No Reports Yet</h3>
+                    <p className="text-gray-600 mb-6 max-w-md mx-auto">
+                      Start documenting your progress at {selectedInternship.company_name} by submitting your first weekly report.
+                    </p>
+                    {activeInternships.some(i => i.id === selectedInternship.id) && (
+                      <Button 
+                        onClick={() => setShowForm(true)}
+                        size="lg"
+                        className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
+                      >
+                        <Plus className="mr-2 h-5 w-5" />
+                        Submit Your First Report
+                      </Button>
+                    )}
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* No Search Results */}
+              {filteredReports.length === 0 && getInternshipReports(selectedInternship.id).length > 0 && (
+                <Card className="shadow-sm">
+                  <CardContent className="p-8 text-center">
+                    <div className="mx-auto w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
+                      <Search className="h-8 w-8 text-gray-400" />
+                    </div>
+                    <h3 className="text-lg font-semibold text-gray-900 mb-2">No Reports Found</h3>
+                    <p className="text-gray-600 mb-4">
+                      No reports match your current search criteria.
+                    </p>
+                    <Button 
+                      variant="outline" 
                       onClick={() => {
                         setSearchTerm("")
                         setStatusFilter("all")
                       }}
-                      className="rounded-lg"
                     >
-                      <X className="h-4 w-4 mr-1" />
                       Clear Filters
                     </Button>
-                  )}
-                </div>
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  {filteredRequests.map((request) => (
-                    <NOCCard
-                      key={request.id}
-                      request={request}
-                      currentUser={currentUser}
-                      onView={() => setViewing(request)}
-                      onEdit={() => setEditing(request)}
-                      onDownloadNOC={() => handleDownloadNOC(request)}
-                    />
-                  ))}
-                </div>
-              </>
-            ) : nocRequests.length > 0 ? (
-              // Show "No results" when filtered but has requests
-              <Card className="border-0 shadow-sm bg-gray-50">
-                <CardContent className="p-12 text-center">
-                  <div className="mx-auto h-16 w-16 rounded-full bg-gray-200 flex items-center justify-center mb-6">
-                    <Search className="h-8 w-8 text-gray-500" />
-                  </div>
-                  <h3 className="text-lg font-medium text-gray-900 mb-2">No matching requests</h3>
-                  <p className="text-gray-600 mb-6">
-                    No NOC requests match your current search criteria. Try adjusting your filters.
-                  </p>
-                  <Button
-                    variant="outline"
-                    onClick={() => {
-                      setSearchTerm("")
-                      setStatusFilter("all")
-                    }}
-                    className="rounded-lg px-6 py-2.5"
-                  >
-                    <X className="mr-2 h-4 w-4" />
-                    Clear All Filters
-                  </Button>
-                </CardContent>
-              </Card>
-            ) : (
-              // Show "No requests" when no requests at all
-              <Card className="border-0 shadow-sm bg-gray-50">
-                <CardContent className="p-12 text-center">
-                  <div className="mx-auto h-16 w-16 rounded-full bg-gray-200 flex items-center justify-center mb-6">
-                    <FileText className="h-8 w-8 text-gray-500" />
-                  </div>
-                  <h3 className="text-lg font-medium text-gray-900 mb-2">No NOC requests yet</h3>
-                  <p className="text-gray-600 mb-6">
-                    When you secure an external internship, submit a NOC request for university approval.
-                  </p>
-                  <Button onClick={() => setShowForm(true)} className="rounded-lg px-6 py-2.5">
-                    <Plus className="mr-2 h-4 w-4" />
-                    Create Your First Request
-                  </Button>
-                </CardContent>
-              </Card>
-            )}
-          </div>
-
-          {/* Loading overlay for download */}
-          {isDownloading && (
-            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-              <div className="bg-white rounded-lg p-6 max-w-sm mx-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-                  <span className="text-gray-900">Generating NOC Certificate...</span>
-                </div>
-                <p className="text-sm text-gray-600 mt-2">Please wait while we prepare your certificate.</p>
-              </div>
+                  </CardContent>
+                </Card>
+              )}
             </div>
           )}
         </div>
-
-        {/* View Details Dialog */}
-        <Dialog open={!!viewing} onOpenChange={(open) => !open && setViewing(null)}>
-          <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle className="text-xl">NOC Request Details</DialogTitle>
-              <DialogDescription>Complete information about your NOC request</DialogDescription>
-            </DialogHeader>
-
-            {viewing && (
-              <div className="space-y-6">
-                {/* Status and Basic Info */}
-                <div className="flex items-start justify-between">
-                  <div>
-                    <h3 className="text-lg font-semibold text-gray-900">{viewing.company}</h3>
-                    <p className="text-gray-600">{viewing.position}</p>
-                  </div>
-                  {(() => {
-                    const meta = prettyStatus(viewing.status)
-                    const Icon = meta.icon
-                    return (
-                      <span
-                        className={cn(
-                          "inline-flex items-center gap-2 text-sm font-medium px-3 py-2 rounded-full",
-                          meta.chipClass,
-                        )}
-                      >
-                        <Icon className="h-4 w-4" />
-                        {meta.label}
-                      </span>
-                    )
-                  })()}
-                </div>
-
-                {/* Details Grid */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="p-4 rounded-lg bg-gray-50 border border-gray-200">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Calendar className="h-4 w-4 text-gray-600" />
-                      <p className="text-sm font-medium text-gray-900">Submitted</p>
-                    </div>
-                    <p className="text-gray-800">{new Date(viewing.submittedDate).toLocaleDateString()}</p>
-                  </div>
-
-                  <div className="p-4 rounded-lg bg-indigo-50 border border-indigo-200">
-                    <div className="flex items-center gap-2 mb-2">
-                      <CalendarDays className="h-4 w-4 text-indigo-600" />
-                      <p className="text-sm font-medium text-indigo-900">Duration</p>
-                    </div>
-                    <p className="text-indigo-800">{calculateDuration(viewing.startDate, viewing.endDate)}</p>
-                  </div>
-
-                  <div className="p-4 rounded-lg bg-blue-50 border border-blue-200">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Calendar className="h-4 w-4 text-blue-600" />
-                      <p className="text-sm font-medium text-blue-900">Start Date</p>
-                    </div>
-                    <p className="text-blue-800">{new Date(viewing.startDate).toLocaleDateString()}</p>
-                  </div>
-
-                  <div className="p-4 rounded-lg bg-green-50 border border-green-200">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Calendar className="h-4 w-4 text-green-600" />
-                      <p className="text-sm font-medium text-green-900">End Date</p>
-                    </div>
-                    <p className="text-green-800">{new Date(viewing.endDate).toLocaleDateString()}</p>
-                  </div>
-
-                  {viewing.stipend && (
-                    <div className="p-4 rounded-lg bg-emerald-50 border border-emerald-200">
-                      <div className="flex items-center gap-2 mb-2">
-                        <DollarSign className="h-4 w-4 text-emerald-600" />
-                        <p className="text-sm font-medium text-emerald-900">Stipend</p>
-                      </div>
-                      <p className="text-emerald-800">{viewing.stipend}</p>
-                    </div>
-                  )}
-
-                  {viewing.approvedDate && (
-                    <div className="p-4 rounded-lg bg-emerald-50 border border-emerald-200">
-                      <div className="flex items-center gap-2 mb-2">
-                        <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-                        <p className="text-sm font-medium text-emerald-900">Approved</p>
-                      </div>
-                      <p className="text-emerald-800">{new Date(viewing.approvedDate).toLocaleDateString()}</p>
-                    </div>
-                  )}
-                </div>
-
-                {/* Job Description */}
-                <div className="space-y-3">
-                  <Label className="text-sm font-medium text-gray-900">Job Description</Label>
-                  <div className="p-4 rounded-lg bg-gray-50 border">
-                    <p className="text-sm text-gray-700 whitespace-pre-wrap">{viewing.description}</p>
-                  </div>
-                </div>
-
-                {/* Feedback */}
-                {viewing.feedback && (
-                  <div className="space-y-3">
-                    <Label className="text-sm font-medium text-gray-900">Review Feedback</Label>
-                    <div className="p-4 rounded-lg bg-amber-50 border border-amber-200">
-                      <p className="text-sm text-amber-800 whitespace-pre-wrap">{viewing.feedback}</p>
-                    </div>
-                  </div>
-                )}
-
-                {/* Documents */}
-                {viewing.documents && viewing.documents.length > 0 && (
-                  <div className="space-y-3">
-                    <Label className="text-sm font-medium text-gray-900">Uploaded Documents</Label>
-                    <div className="space-y-2">
-                      {viewing.documents.map((doc, index) => (
-                        <div key={index} className="flex items-center justify-between p-3 border rounded-lg bg-gray-50">
-                          <div className="flex items-center gap-3">
-                            <div className="h-8 w-8 rounded bg-red-100 flex items-center justify-center">
-                              <FileText className="h-4 w-4 text-red-600" />
-                            </div>
-                            <div>
-                              <p className="text-sm font-medium text-gray-900">
-                                {doc.split("/").pop() || `Document ${index + 1}`}
-                              </p>
-                              <p className="text-xs text-gray-500">PDF Document</p>
-                            </div>
-                          </div>
-                          <Button variant="outline" size="sm" onClick={() => openDocument(doc)} className="rounded-lg">
-                            <ExternalLink className="h-4 w-4 mr-1" />
-                            Open
-                          </Button>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Download NOC Certificate */}
-                {viewing.status === "approved" && (
-                  <div className="p-4 rounded-lg bg-emerald-50 border border-emerald-200">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <h4 className="text-sm font-medium text-emerald-900 mb-1">NOC Certificate Ready</h4>
-                        <p className="text-xs text-emerald-700">Your NOC has been approved and is ready for download</p>
-                      </div>
-                      <Button
-                        variant="outline"
-                        className="border-emerald-300 text-emerald-700 hover:bg-emerald-100 bg-transparent"
-                        onClick={() => {
-                          setViewing(null)
-                          handleDownloadNOC(viewing)
-                        }}
-                        disabled={isDownloading}
-                      >
-                        {isDownloading ? (
-                          <div className="flex items-center gap-2">
-                            <div className="w-4 h-4 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin"></div>
-                            <span>Generating...</span>
-                          </div>
-                        ) : (
-                          <>
-                            <Download className="h-4 w-4 mr-2" />
-                            Download NOC
-                          </>
-                        )}
-                      </Button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setViewing(null)} className="rounded-lg">
-                Close
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-
-        {/* Edit Dialog */}
-        <Dialog open={!!editing} onOpenChange={(open) => !open && setEditing(null)}>
-          <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle className="text-xl">Edit NOC Request</DialogTitle>
-              <DialogDescription>Update the details of your NOC request</DialogDescription>
-            </DialogHeader>
-
-            {editing && (
-              <EditForm
-                request={editing}
-                onCancel={() => setEditing(null)}
-                onSave={(updates) => {
-                  setNocRequests((prev) => prev.map((req) => (req.id === editing.id ? { ...req, ...updates } : req)))
-                  setEditing(null)
-                  toast({
-                    title: "Request Updated",
-                    description: "Your NOC request has been updated successfully.",
-                  })
-                }}
-              />
-            )}
-          </DialogContent>
-        </Dialog>
       </DashboardLayout>
     </AuthGuard>
   )
