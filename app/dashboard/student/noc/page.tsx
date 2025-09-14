@@ -16,6 +16,13 @@ import { cn } from "@/lib/utils"
 // Data helpers
 import { getNOCRequestsByStudent, createNOCRequest, getCurrentUser, uploadFile } from "@/lib/data"
 
+// NOC Certificate Generator
+import { 
+  generateAndDownloadNOCPDF, 
+  generateNOCCertificateNumber,
+  type NOCCertificateData 
+} from "@/lib/noc-generator"
+
 // Icons
 import {
   Plus,
@@ -62,6 +69,11 @@ type NOCRequest = {
   description: string
   feedback?: string
   documents?: string[] // paths or URLs
+  studentName?: string
+  studentEmail?: string
+  rollNumber?: string
+  department?: string
+  approvedBy?: string
   [key: string]: any
 }
 
@@ -315,12 +327,16 @@ function UploadZone({
 // Enhanced NOC Card Component
 function NOCCard({
   request,
+  currentUser,
   onView,
   onEdit,
+  onDownloadNOC,
 }: {
   request: NOCRequest
+  currentUser: any
   onView: () => void
   onEdit: () => void
+  onDownloadNOC: () => void
 }) {
   const meta = prettyStatus(request.status)
   const StatusIcon = meta.icon
@@ -404,6 +420,16 @@ function NOCCard({
                 <Eye className="h-3 w-3 mr-1" />
                 View
               </Button>
+              {request.status === "approved" && (
+                <Button 
+                  size="sm" 
+                  onClick={onDownloadNOC} 
+                  className="h-8 px-3 text-xs bg-emerald-600 hover:bg-emerald-700"
+                >
+                  <Download className="h-3 w-3 mr-1" />
+                  NOC
+                </Button>
+              )}
             </div>
           </div>
         </div>
@@ -593,6 +619,7 @@ export default function NOCRequests() {
   const [viewing, setViewing] = useState<NOCRequest | null>(null)
   const [editing, setEditing] = useState<NOCRequest | null>(null)
   const [currentUser, setCurrentUser] = useState<any>(null)
+  const [isDownloading, setIsDownloading] = useState(false)
   const { toast } = useToast()
   const [isLoading, setIsLoading] = useState(false)
 
@@ -630,6 +657,11 @@ export default function NOCRequests() {
                   }
                 })()
               : [],
+          studentName: r.student_name || user.name,
+          studentEmail: r.student_email || user.email,
+          rollNumber: r.roll_number || user.rollNumber,
+          department: r.department || user.department,
+          approvedBy: r.approved_by || r.teacher_approved_by,
           raw: r,
         }))
         setNocRequests(normalized)
@@ -701,6 +733,94 @@ export default function NOCRequests() {
     setSelectedFiles([])
     setShowForm(false)
   }, [])
+
+  // Handle NOC Certificate Download
+  const handleDownloadNOC = async (request: NOCRequest) => {
+    if (!currentUser) {
+      toast({
+        title: "Authentication Error",
+        description: "Please log in to download NOC certificate.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    if (request.status !== "approved") {
+      toast({
+        title: "NOC Not Approved",
+        description: "NOC certificate can only be downloaded for approved requests.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    setIsDownloading(true)
+
+    try {
+      // Generate certificate number if not exists
+      const certificateNumber = generateNOCCertificateNumber()
+
+      // Prepare NOC certificate data
+      const nocData: NOCCertificateData = {
+        student: {
+          name: request.studentName || currentUser.name || "Unknown Student",
+          email: request.studentEmail || currentUser.email || "",
+          id: currentUser.id,
+          rollNumber: request.rollNumber || currentUser.rollNumber || "N/A",
+          department: request.department || currentUser.department || "Computer Engineering",
+        },
+        internship: {
+          company: request.company,
+          position: request.position,
+          duration: calculateDuration(request.startDate, request.endDate),
+          startDate: request.startDate,
+          endDate: request.endDate,
+          description: request.description,
+        },
+        approval: {
+          approvedBy: request.approvedBy || "T&P Officer",
+          approvedDate: request.approvedDate || new Date().toISOString(),
+          certificateNumber: certificateNumber,
+        },
+      }
+
+      console.log("[v0] Generating NOC certificate with data:", nocData)
+
+      // Generate and download PDF
+      const result = await generateAndDownloadNOCPDF(nocData)
+
+      if (!result.success) {
+        throw new Error(result.error || "Failed to generate NOC certificate")
+      }
+
+      // Create download link
+      if (result.pdfBlob && result.fileName) {
+        const url = window.URL.createObjectURL(result.pdfBlob)
+        const link = document.createElement("a")
+        link.href = url
+        link.download = result.fileName
+        document.body.appendChild(link)
+        link.click()
+        document.body.removeChild(link)
+        window.URL.revokeObjectURL(url)
+
+        toast({
+          title: "NOC Certificate Downloaded",
+          description: `Your NOC certificate has been downloaded successfully.`,
+        })
+      }
+
+    } catch (error: any) {
+      console.error("[v0] Error downloading NOC certificate:", error)
+      toast({
+        title: "Download Failed",
+        description: error.message || "Failed to download NOC certificate. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsDownloading(false)
+    }
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -813,6 +933,10 @@ export default function NOCRequests() {
         description: newRequest.description || requestData.description,
         feedback: newRequest.feedback || "",
         documents: fileUrl ? [fileUrl] : [],
+        studentName: requestData.studentName,
+        studentEmail: requestData.studentEmail,
+        rollNumber: currentUser.rollNumber,
+        department: currentUser.department,
       }
 
       setNocRequests((prev) => [normalized, ...prev])
@@ -1148,8 +1272,10 @@ export default function NOCRequests() {
                     <NOCCard
                       key={request.id}
                       request={request}
+                      currentUser={currentUser}
                       onView={() => setViewing(request)}
                       onEdit={() => setEditing(request)}
+                      onDownloadNOC={() => handleDownloadNOC(request)}
                     />
                   ))}
                 </div>
@@ -1197,6 +1323,19 @@ export default function NOCRequests() {
               </Card>
             )}
           </div>
+
+          {/* Loading overlay for download */}
+          {isDownloading && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+              <div className="bg-white rounded-lg p-6 max-w-sm mx-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                  <span className="text-gray-900">Generating NOC Certificate...</span>
+                </div>
+                <p className="text-sm text-gray-600 mt-2">Please wait while we prepare your certificate.</p>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* View Details Dialog */}
@@ -1345,14 +1484,22 @@ export default function NOCRequests() {
                         variant="outline"
                         className="border-emerald-300 text-emerald-700 hover:bg-emerald-100 bg-transparent"
                         onClick={() => {
-                          toast({
-                            title: "Downloading NOC Certificate",
-                            description: "Your NOC certificate is being prepared for download.",
-                          })
+                          setViewing(null)
+                          handleDownloadNOC(viewing)
                         }}
+                        disabled={isDownloading}
                       >
-                        <Download className="h-4 w-4 mr-2" />
-                        Download NOC
+                        {isDownloading ? (
+                          <div className="flex items-center gap-2">
+                            <div className="w-4 h-4 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin"></div>
+                            <span>Generating...</span>
+                          </div>
+                        ) : (
+                          <>
+                            <Download className="h-4 w-4 mr-2" />
+                            Download NOC
+                          </>
+                        )}
                       </Button>
                     </div>
                   </div>
