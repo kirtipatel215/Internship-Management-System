@@ -5,6 +5,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
+import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import {
   Download,
@@ -19,8 +20,10 @@ import {
   AlertCircle,
   GraduationCap,
   BookOpen,
+  Search,
+  ExternalLink,
 } from "lucide-react"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { toast } from "sonner"
 
 import { getTeacherNOCRequests, updateNOCStatus, getCurrentUser } from "@/lib/data"
@@ -43,7 +46,8 @@ interface NOCRequest {
   description: string
   feedback?: string
   teacher_feedback?: string
-  documents: any[]
+  // Supports either array of urls (string) or objects { url, name }
+  documents: Array<string | { url: string; name?: string }>
   company_verified?: boolean
   tp_officer_feedback?: string
 }
@@ -61,6 +65,7 @@ export default function TeacherNOC() {
   const [selectedNOC, setSelectedNOC] = useState<number | null>(null)
   const [feedback, setFeedback] = useState("")
   const [filterStatus, setFilterStatus] = useState("all")
+  const [searchText, setSearchText] = useState("") // NEW: search text
   const [nocRequests, setNocRequests] = useState<NOCRequest[]>([])
   const [stats, setStats] = useState<NOCStats>({
     pendingTeacherApproval: 0,
@@ -148,7 +153,7 @@ export default function TeacherNOC() {
 
   // Generate mock NOC requests for teacher approval
   const generateMockTeacherNOCRequests = (count: number): NOCRequest[] => {
-    const mockData = [
+    const mockData: NOCRequest[] = [
       {
         id: 1,
         student_id: "student_1",
@@ -160,11 +165,14 @@ export default function TeacherNOC() {
         start_date: "2024-04-01",
         submitted_date: "2024-03-25",
         tp_approved_date: "2024-03-27",
-        status: "pending_teacher_approval" as const,
+        status: "pending_teacher_approval",
         description:
           "Full-stack web development using React and Node.js. Student will work on real client projects and learn industry best practices.",
         company_verified: true,
-        documents: ["offer_letter.pdf", "company_profile.pdf"],
+        documents: [
+          "https://example.com/docs/alex-offer-letter.pdf",
+          { url: "https://example.com/docs/techcorp-profile.pdf", name: "company_profile.pdf" },
+        ],
         tp_officer_feedback: "Company verified and documents are in order. Approved for teacher review.",
       },
       {
@@ -178,11 +186,14 @@ export default function TeacherNOC() {
         start_date: "2024-04-15",
         submitted_date: "2024-03-24",
         tp_approved_date: "2024-03-26",
-        status: "pending_teacher_approval" as const,
+        status: "pending_teacher_approval",
         description:
           "Data analysis and visualization using Python and Tableau. Focus on machine learning applications in business intelligence.",
         company_verified: true,
-        documents: ["offer_letter.pdf", "project_outline.pdf"],
+        documents: [
+          "https://example.com/docs/priya-offer.pdf",
+          { url: "https://example.com/docs/project-outline.pdf", name: "project_outline.pdf" },
+        ],
         tp_officer_feedback: "Excellent opportunity for data science learning. Company has good reputation.",
       },
       {
@@ -197,10 +208,13 @@ export default function TeacherNOC() {
         submitted_date: "2024-03-18",
         tp_approved_date: "2024-03-20",
         teacher_approved_date: "2024-03-22",
-        status: "approved" as const,
+        status: "approved",
         description: "User interface design and user experience research for mobile and web applications.",
         company_verified: true,
-        documents: ["offer_letter.pdf", "project_details.pdf"],
+        documents: [
+          "https://example.com/docs/raj-offer.pdf",
+          { url: "https://example.com/docs/creative-project-details.pdf", name: "project_details.pdf" },
+        ],
         tp_officer_feedback: "Company is in our approved list. Good learning opportunity.",
         teacher_feedback: "Excellent alignment with student's academic focus on HCI. Approved for internship.",
       },
@@ -216,10 +230,10 @@ export default function TeacherNOC() {
         submitted_date: "2024-03-18",
         tp_approved_date: "2024-03-20",
         reviewed_date: "2024-03-22",
-        status: "rejected" as const,
+        status: "rejected",
         description: "Digital marketing and social media management with focus on content creation.",
         company_verified: true,
-        documents: ["offer_letter.pdf"],
+        documents: ["https://example.com/docs/neha-offer.pdf"],
         tp_officer_feedback: "Company verified and opportunity looks good.",
         teacher_feedback:
           "This internship does not align with the student's Computer Engineering curriculum. Please find a more technical role.",
@@ -227,12 +241,13 @@ export default function TeacherNOC() {
     ]
 
     // Extend array to match count
-    const extended = []
+    const extended: NOCRequest[] = []
     for (let i = 0; i < count; i++) {
       const baseIndex = i % mockData.length
       const item = { ...mockData[baseIndex] }
       item.id = i + 1
       item.student_id = `student_${i + 1}`
+      item.student_name = `${item.student_name.split(" ")[0]} ${i + 1}`
       extended.push(item)
     }
 
@@ -302,15 +317,52 @@ export default function TeacherNOC() {
     }
   }
 
-  // Filter requests
-  const filteredRequests =
-    filterStatus === "all"
-      ? nocRequests
-      : filterStatus === "pending"
-        ? nocRequests.filter((req) => req.status === "pending_teacher_approval")
-        : filterStatus === "approved"
-          ? nocRequests.filter((req) => req.status === "approved" || req.status === "teacher_approved")
-          : nocRequests.filter((req) => req.status === "rejected" && req.teacher_feedback)
+  // Helpers to normalize doc URLs and names
+  const getDocUrl = (doc: string | { url: string; name?: string }) =>
+    typeof doc === "string" ? doc : doc?.url
+
+  const getDocName = (doc: string | { url: string; name?: string }, index: number) =>
+    typeof doc === "string" ? doc.split("/").pop() || `Document ${index + 1}` : doc?.name || `Document ${index + 1}`
+
+  const openDoc = (doc: string | { url: string; name?: string }) => {
+    const url = getDocUrl(doc)
+    if (!url) {
+      toast.error("Document URL not available")
+      return
+    }
+    window.open(url, "_blank", "noopener,noreferrer")
+  }
+
+  // Status filter
+  const statusFiltered = useMemo(() => {
+    if (filterStatus === "all") return nocRequests
+    if (filterStatus === "pending")
+      return nocRequests.filter((req) => req.status === "pending_teacher_approval")
+    if (filterStatus === "approved")
+      return nocRequests.filter((req) => req.status === "approved" || req.status === "teacher_approved")
+    return nocRequests.filter((req) => req.status === "rejected" && req.teacher_feedback)
+  }, [nocRequests, filterStatus])
+
+  // Search filter (client-side)
+  const filteredRequests = useMemo(() => {
+    const q = searchText.trim().toLowerCase()
+    if (!q) return statusFiltered
+    return statusFiltered.filter((r) => {
+      const haystack = [
+        r.student_name,
+        r.student_email,
+        r.company_name,
+        r.position,
+        r.description,
+        r.duration,
+        r.status,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase()
+      return haystack.includes(q)
+    })
+  }, [statusFiltered, searchText])
 
   if (loading) {
     return (
@@ -328,14 +380,25 @@ export default function TeacherNOC() {
   return (
     <DashboardLayout role="teacher">
       <div className="p-6">
-        <div className="flex justify-between items-center mb-6">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
           <div>
             <h1 className="text-3xl font-bold text-gray-900">NOC Academic Approval</h1>
             <p className="text-gray-600">Review and provide academic approval for student internship requests</p>
           </div>
-          <div className="flex gap-3">
+          <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
+            {/* Search box */}
+            <div className="relative w-full sm:w-72">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500" />
+              <Input
+                value={searchText}
+                onChange={(e) => setSearchText(e.target.value)}
+                placeholder="Search name, company, role..."
+                className="pl-9"
+              />
+            </div>
+            {/* Status filter */}
             <Select value={filterStatus} onValueChange={setFilterStatus}>
-              <SelectTrigger className="w-48">
+              <SelectTrigger className="w-full sm:w-48">
                 <SelectValue placeholder="Filter by status" />
               </SelectTrigger>
               <SelectContent>
@@ -453,6 +516,11 @@ export default function TeacherNOC() {
                 : filterStatus.charAt(0).toUpperCase() + filterStatus.slice(1)}
             </Badge>
           )}
+          {searchText && (
+            <Badge variant="outline" className="ml-1">
+              “{searchText}”
+            </Badge>
+          )}
         </div>
 
         {/* NOC Requests List */}
@@ -473,191 +541,228 @@ export default function TeacherNOC() {
               </CardContent>
             </Card>
           ) : (
-            filteredRequests.map((request) => (
-              <Card key={request.id} className={selectedNOC === request.id ? "ring-2 ring-blue-500" : ""}>
-                <CardContent className="p-6">
-                  <div className="flex items-start justify-between mb-4">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-3 mb-2">
-                        <div className="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center">
-                          <User className="h-5 w-5 text-blue-600" />
-                        </div>
-                        <div>
-                          <h3 className="text-lg font-semibold">{request.student_name}</h3>
-                          <p className="text-sm text-gray-600">{request.student_email}</p>
-                        </div>
-                        <Badge
-                          variant={
-                            request.status === "approved" || request.status === "teacher_approved"
-                              ? "default"
-                              : request.status === "rejected"
-                                ? "destructive"
-                                : request.status === "pending_teacher_approval"
-                                  ? "secondary"
-                                  : "outline"
-                          }
-                          className="flex items-center gap-1"
-                        >
-                          {(request.status === "approved" || request.status === "teacher_approved") && (
-                            <CheckCircle className="h-3 w-3" />
-                          )}
-                          {request.status === "rejected" && <XCircle className="h-3 w-3" />}
-                          {request.status === "pending_teacher_approval" && <Clock className="h-3 w-3" />}
-                          {request.status === "approved" || request.status === "teacher_approved"
-                            ? "Approved"
-                            : request.status === "pending_teacher_approval"
-                              ? "Pending Approval"
-                              : request.status === "rejected"
-                                ? "Rejected"
-                                : request.status}
-                        </Badge>
-                        {request.company_verified && (
-                          <Badge variant="default" className="bg-green-600">
-                            <Building className="h-3 w-3 mr-1" />
-                            TP Verified
+            filteredRequests.map((request) => {
+              const firstDoc = request.documents?.[0]
+              const firstDocUrl = firstDoc ? getDocUrl(firstDoc) : null
+              return (
+                <Card key={request.id} className={selectedNOC === request.id ? "ring-2 ring-blue-500" : ""}>
+                  <CardContent className="p-6">
+                    <div className="flex items-start justify-between mb-4">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-3 mb-2">
+                          <div className="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center">
+                            <User className="h-5 w-5 text-blue-600" />
+                          </div>
+                          <div>
+                            <h3 className="text-lg font-semibold">{request.student_name}</h3>
+                            <p className="text-sm text-gray-600">{request.student_email}</p>
+                          </div>
+                          <Badge
+                            variant={
+                              request.status === "approved" || request.status === "teacher_approved"
+                                ? "default"
+                                : request.status === "rejected"
+                                  ? "destructive"
+                                  : request.status === "pending_teacher_approval"
+                                    ? "secondary"
+                                    : "outline"
+                            }
+                            className="flex items-center gap-1"
+                          >
+                            {(request.status === "approved" || request.status === "teacher_approved") && (
+                              <CheckCircle className="h-3 w-3" />
+                            )}
+                            {request.status === "rejected" && <XCircle className="h-3 w-3" />}
+                            {request.status === "pending_teacher_approval" && <Clock className="h-3 w-3" />}
+                            {request.status === "approved" || request.status === "teacher_approved"
+                              ? "Approved"
+                              : request.status === "pending_teacher_approval"
+                                ? "Pending Approval"
+                                : request.status === "rejected"
+                                  ? "Rejected"
+                                  : request.status}
                           </Badge>
+                          {request.company_verified && (
+                            <Badge variant="default" className="bg-green-600">
+                              <Building className="h-3 w-3 mr-1" />
+                              TP Verified
+                            </Badge>
+                          )}
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-3">
+                          <div>
+                            <h4 className="font-medium text-gray-900">{request.position}</h4>
+                            <p className="text-sm text-gray-600">{request.company_name}</p>
+                            <p className="text-sm text-gray-600">Duration: {request.duration}</p>
+                            <p className="text-sm text-gray-600">
+                              Start Date: {new Date(request.start_date).toLocaleDateString()}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-sm text-gray-600">
+                              Submitted: {new Date(request.submitted_date).toLocaleDateString()}
+                            </p>
+                            {request.tp_approved_date && (
+                              <p className="text-sm text-gray-600">
+                                TP Approved: {new Date(request.tp_approved_date).toLocaleDateString()}
+                              </p>
+                            )}
+                            {request.teacher_approved_date && (
+                              <p className="text-sm text-gray-600">
+                                Teacher Approved: {new Date(request.teacher_approved_date).toLocaleDateString()}
+                              </p>
+                            )}
+                            <div className="flex flex-wrap gap-1 mt-2">
+                              {request.documents &&
+                                request.documents.map((doc, index) => (
+                                  <Badge
+                                    key={index}
+                                    variant="outline"
+                                    className="text-xs cursor-pointer"
+                                    onClick={() => openDoc(doc)}
+                                  >
+                                    {getDocName(doc, index)}
+                                    <ExternalLink className="h-3 w-3 ml-1" />
+                                  </Badge>
+                                ))}
+                            </div>
+                          </div>
+                        </div>
+
+                        <p className="text-sm text-gray-700 mb-3">{request.description}</p>
+
+                        {/* TP Officer Feedback */}
+                        {request.tp_officer_feedback && (
+                          <div className="p-3 bg-blue-50 rounded-lg mb-3">
+                            <div className="flex items-center gap-2 mb-1">
+                              <Building className="h-4 w-4 text-blue-600" />
+                              <span className="text-sm font-medium text-blue-800">TP Officer Feedback:</span>
+                            </div>
+                            <p className="text-sm text-blue-700">{request.tp_officer_feedback}</p>
+                          </div>
+                        )}
+
+                        {/* Teacher Feedback */}
+                        {request.teacher_feedback && (
+                          <div className="p-3 bg-green-50 rounded-lg">
+                            <div className="flex items-center gap-2 mb-1">
+                              <GraduationCap className="h-4 w-4 text-green-600" />
+                              <span className="text-sm font-medium text-green-800">My Academic Review:</span>
+                            </div>
+                            <p className="text-sm text-green-700">{request.teacher_feedback}</p>
+                          </div>
                         )}
                       </div>
 
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-3">
-                        <div>
-                          <h4 className="font-medium text-gray-900">{request.position}</h4>
-                          <p className="text-sm text-gray-600">{request.company_name}</p>
-                          <p className="text-sm text-gray-600">Duration: {request.duration}</p>
-                          <p className="text-sm text-gray-600">
-                            Start Date: {new Date(request.start_date).toLocaleDateString()}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-sm text-gray-600">
-                            Submitted: {new Date(request.submitted_date).toLocaleDateString()}
-                          </p>
-                          {request.tp_approved_date && (
-                            <p className="text-sm text-gray-600">
-                              TP Approved: {new Date(request.tp_approved_date).toLocaleDateString()}
-                            </p>
-                          )}
-                          {request.teacher_approved_date && (
-                            <p className="text-sm text-gray-600">
-                              Teacher Approved: {new Date(request.teacher_approved_date).toLocaleDateString()}
-                            </p>
-                          )}
-                          <div className="flex flex-wrap gap-1 mt-2">
-                            {request.documents &&
-                              request.documents.map((doc: any, index: number) => (
-                                <Badge key={index} variant="outline" className="text-xs">
-                                  {typeof doc === "string" ? doc : doc.name || `Document ${index + 1}`}
-                                </Badge>
-                              ))}
-                          </div>
-                        </div>
-                      </div>
-
-                      <p className="text-sm text-gray-700 mb-3">{request.description}</p>
-
-                      {/* TP Officer Feedback */}
-                      {request.tp_officer_feedback && (
-                        <div className="p-3 bg-blue-50 rounded-lg mb-3">
-                          <div className="flex items-center gap-2 mb-1">
-                            <Building className="h-4 w-4 text-blue-600" />
-                            <span className="text-sm font-medium text-blue-800">TP Officer Feedback:</span>
-                          </div>
-                          <p className="text-sm text-blue-700">{request.tp_officer_feedback}</p>
-                        </div>
-                      )}
-
-                      {/* Teacher Feedback */}
-                      {request.teacher_feedback && (
-                        <div className="p-3 bg-green-50 rounded-lg">
-                          <div className="flex items-center gap-2 mb-1">
-                            <GraduationCap className="h-4 w-4 text-green-600" />
-                            <span className="text-sm font-medium text-green-800">My Academic Review:</span>
-                          </div>
-                          <p className="text-sm text-green-700">{request.teacher_feedback}</p>
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="flex flex-col gap-2 ml-4">
-                      <Button variant="outline" size="sm">
-                        <Eye className="h-4 w-4 mr-1" />
-                        View Documents
-                      </Button>
-                      <Button variant="outline" size="sm">
-                        <Download className="h-4 w-4 mr-1" />
-                        Download
-                      </Button>
-                      {request.status === "pending_teacher_approval" && (
+                      <div className="flex flex-col gap-2 ml-4">
                         <Button
+                          variant="outline"
                           size="sm"
-                          onClick={() => setSelectedNOC(selectedNOC === request.id ? null : request.id)}
-                          disabled={processing !== null}
-                          className="bg-blue-600 hover:bg-blue-700"
+                          onClick={() => {
+                            if (!firstDocUrl) {
+                              toast.error("No document available")
+                              return
+                            }
+                            window.open(firstDocUrl, "_blank", "noopener,noreferrer")
+                          }}
+                          disabled={!firstDocUrl}
+                          title={firstDocUrl ? "Open first document" : "No document URL"}
                         >
-                          <BookOpen className="h-4 w-4 mr-1" />
-                          Academic Review
+                          <Eye className="h-4 w-4 mr-1" />
+                          View Documents
                         </Button>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Teacher Review Form */}
-                  {selectedNOC === request.id && request.status === "pending_teacher_approval" && (
-                    <div className="border-t pt-4 mt-4">
-                      <div className="space-y-4">
-                        <div className="p-4 bg-blue-50 rounded-lg">
-                          <h4 className="font-medium text-blue-800 mb-2">Academic Review Guidelines</h4>
-                          <ul className="text-sm text-blue-700 space-y-1">
-                            <li>• Does this internship align with the student's academic curriculum?</li>
-                            <li>• Will the student gain relevant technical/academic skills?</li>
-                            <li>• Is the duration appropriate for academic requirements?</li>
-                            <li>• Does the role match the student's learning objectives?</li>
-                          </ul>
-                        </div>
-                        <div>
-                          <label className="text-sm font-medium text-gray-700 mb-2 block">
-                            Academic Review Comments <span className="text-red-500">*</span>
-                          </label>
-                          <Textarea
-                            placeholder="Provide your academic assessment of this internship opportunity. Consider curriculum alignment, learning outcomes, and academic value..."
-                            value={feedback}
-                            onChange={(e) => setFeedback(e.target.value)}
-                            rows={4}
-                            disabled={processing === request.id}
-                          />
-                        </div>
-                        <div className="flex gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            if (!request.documents?.length) {
+                              toast.error("No documents to download")
+                              return
+                            }
+                            // For simplicity, open all in new tabs. For real download, handle via server or blobs.
+                            request.documents.forEach((doc) => {
+                              const url = getDocUrl(doc)
+                              if (url) window.open(url, "_blank", "noopener,noreferrer")
+                            })
+                          }}
+                          title="Open all documents"
+                        >
+                          <Download className="h-4 w-4 mr-1" />
+                          Download
+                        </Button>
+                        {request.status === "pending_teacher_approval" && (
                           <Button
-                            onClick={() => handleTeacherNOCAction(request.id, "approve")}
-                            disabled={processing !== null || !feedback.trim()}
-                            className="bg-green-600 hover:bg-green-700"
+                            size="sm"
+                            onClick={() => setSelectedNOC(selectedNOC === request.id ? null : request.id)}
+                            disabled={processing !== null}
+                            className="bg-blue-600 hover:bg-blue-700"
                           >
-                            {processing === request.id ? (
-                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            ) : (
-                              <CheckCircle className="mr-2 h-4 w-4" />
-                            )}
-                            Final Approval
+                            <BookOpen className="h-4 w-4 mr-1" />
+                            Academic Review
                           </Button>
-                          <Button
-                            variant="destructive"
-                            onClick={() => handleTeacherNOCAction(request.id, "reject")}
-                            disabled={processing !== null || !feedback.trim()}
-                          >
-                            {processing === request.id ? (
-                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            ) : (
-                              <XCircle className="mr-2 h-4 w-4" />
-                            )}
-                            Reject (Academic Mismatch)
-                          </Button>
-                        </div>
+                        )}
                       </div>
                     </div>
-                  )}
-                </CardContent>
-              </Card>
-            ))
+
+                    {/* Teacher Review Form */}
+                    {selectedNOC === request.id && request.status === "pending_teacher_approval" && (
+                      <div className="border-t pt-4 mt-4">
+                        <div className="space-y-4">
+                          <div className="p-4 bg-blue-50 rounded-lg">
+                            <h4 className="font-medium text-blue-800 mb-2">Academic Review Guidelines</h4>
+                            <ul className="text-sm text-blue-700 space-y-1">
+                              <li>• Does this internship align with the student's academic curriculum?</li>
+                              <li>• Will the student gain relevant technical/academic skills?</li>
+                              <li>• Is the duration appropriate for academic requirements?</li>
+                              <li>• Does the role match the student's learning objectives?</li>
+                            </ul>
+                          </div>
+                          <div>
+                            <label className="text-sm font-medium text-gray-700 mb-2 block">
+                              Academic Review Comments <span className="text-red-500">*</span>
+                            </label>
+                            <Textarea
+                              placeholder="Provide your academic assessment of this internship opportunity. Consider curriculum alignment, learning outcomes, and academic value..."
+                              value={feedback}
+                              onChange={(e) => setFeedback(e.target.value)}
+                              rows={4}
+                              disabled={processing === request.id}
+                            />
+                          </div>
+                          <div className="flex gap-2">
+                            <Button
+                              onClick={() => handleTeacherNOCAction(request.id, "approve")}
+                              disabled={processing !== null || !feedback.trim()}
+                              className="bg-green-600 hover:bg-green-700"
+                            >
+                              {processing === request.id ? (
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              ) : (
+                                <CheckCircle className="mr-2 h-4 w-4" />
+                              )}
+                              Final Approval
+                            </Button>
+                            <Button
+                              variant="destructive"
+                              onClick={() => handleTeacherNOCAction(request.id, "reject")}
+                              disabled={processing !== null || !feedback.trim()}
+                            >
+                              {processing === request.id ? (
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              ) : (
+                                <XCircle className="mr-2 h-4 w-4" />
+                              )}
+                              Reject (Academic Mismatch)
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              )
+            })
           )}
         </div>
       </div>
