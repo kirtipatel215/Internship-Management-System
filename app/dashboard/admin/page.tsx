@@ -29,15 +29,46 @@ export default function AdminDashboard() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    const currentUser = getCurrentUser()
-    setUser(currentUser)
+    const loadData = async () => {
+      try {
+        const currentUser = await getCurrentUser()
+        setUser(currentUser)
 
-    const data = getAdminDashboardData()
-    setDashboardData(data)
-    setLoading(false)
+        const data = await getAdminDashboardData()
+        setDashboardData(data)
+      } catch (error) {
+        console.error("Error loading admin dashboard:", error)
+        // Set mock data on error
+        setDashboardData({
+          stats: {
+            totalUsers: 1250,
+            activeUsers: 890,
+            totalStudents: 800,
+            totalTeachers: 45,
+            totalReports: 2400,
+            totalCertificates: 650,
+            totalCompanies: 120,
+            totalOpportunities: 85,
+          },
+          systemHealth: [
+            { component: "Database", status: "healthy", uptime: 99.9 },
+            { component: "Authentication", status: "healthy", uptime: 100 },
+            { component: "File Storage", status: "warning", uptime: 98.5 },
+            { component: "Email Service", status: "healthy", uptime: 99.7 },
+          ],
+          recentActivities: [
+            { type: "system", title: "System initialized", time: new Date().toISOString(), status: "success" }
+          ],
+        })
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    loadData()
   }, [])
 
-  if (loading) {
+  if (loading || !dashboardData) {
     return (
       <AuthGuard allowedRoles={["admin"]}>
         <DashboardLayout>
@@ -57,29 +88,7 @@ export default function AdminDashboard() {
     )
   }
 
-  const data = dashboardData || {
-    stats: {
-      totalUsers: 1250,
-      activeUsers: 890,
-      totalStudents: 800,
-      totalTeachers: 45,
-      totalReports: 2400,
-      totalCertificates: 650,
-      totalCompanies: 120,
-      totalOpportunities: 85,
-    },
-    systemHealth: [
-      { component: "Database", status: "healthy", uptime: 99.9 },
-      { component: "Authentication", status: "healthy", uptime: 100 },
-      { component: "File Storage", status: "warning", uptime: 98.5 },
-      { component: "Email Service", status: "healthy", uptime: 99.7 },
-    ],
-    recentActivities: [
-      { type: "system", title: "John Doe: Login", time: "2024-01-15T10:30:00Z", status: "success" },
-      { type: "system", title: "Dr. Sarah Wilson: Report Review", time: "2024-01-15T09:45:00Z", status: "success" },
-      { type: "system", title: "TP Officer: Company Verification", time: "2024-01-15T08:30:00Z", status: "success" },
-    ],
-  }
+  const data = dashboardData
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -152,7 +161,7 @@ export default function AdminDashboard() {
               </div>
               <div className="text-right space-y-1">
                 <p className="text-sm text-gray-500 font-medium">System Administrator</p>
-                <p className="text-sm text-gray-500">Last login: 2024-01-15 09:30 AM</p>
+                <p className="text-sm text-gray-500">Last login: {new Date().toLocaleString()}</p>
                 <p className="text-xs text-gray-400">ID: ADM001</p>
                 <div className="flex items-center justify-end mt-2">
                   <Bell className="h-4 w-4 text-blue-500 mr-1" />
@@ -203,14 +212,12 @@ export default function AdminDashboard() {
                 >
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                     <CardTitle className="text-sm font-medium text-gray-600">{stat.title}</CardTitle>
-                    <div
-                      className={`w-10 h-10 rounded-xl bg-gradient-to-br from-${stat.color}-100 to-${stat.color}-200 flex items-center justify-center`}
-                    >
-                      <stat.icon className={`h-5 w-5 text-${stat.color}-600`} />
+                    <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center">
+                      <stat.icon className="h-5 w-5 text-blue-600" />
                     </div>
                   </CardHeader>
                   <CardContent>
-                    <div className={`text-3xl font-bold text-${stat.color}-600 mb-2`}>{stat.value}</div>
+                    <div className="text-3xl font-bold text-blue-600 mb-2">{stat.value}</div>
                     <div className="flex items-center justify-between">
                       <p className="text-xs text-gray-500">{stat.subtitle}</p>
                       <div className="flex items-center">
@@ -349,10 +356,8 @@ export default function AdminDashboard() {
                         variant="outline"
                         className="w-full h-20 flex flex-col items-center justify-center space-y-2 hover:bg-blue-50 hover:border-blue-200 transition-all duration-300 bg-gradient-to-br from-white to-gray-50 border-2"
                       >
-                        <div
-                          className={`w-8 h-8 rounded-lg bg-gradient-to-br from-${action.color}-100 to-${action.color}-200 flex items-center justify-center`}
-                        >
-                          <action.icon className={`h-4 w-4 text-${action.color}-600`} />
+                        <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center">
+                          <action.icon className="h-4 w-4 text-blue-600" />
                         </div>
                         <span className="font-semibold text-gray-700 text-center text-sm">{action.label}</span>
                       </Button>

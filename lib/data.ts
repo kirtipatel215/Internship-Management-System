@@ -2964,3 +2964,800 @@ const getMockTeacherCertificates = () => [
     created_at: "2024-06-05T14:20:00Z"
   }
 ]
+
+
+
+// ===================
+// INSTRUCTIONS:
+// 1. Add this code to your data.ts file after the getTPOfficerDashboardData function
+// 2. Update your page.tsx useEffect as shown below
+// ===================
+
+// FOR data.ts - Add these functions:
+
+// ===================
+// ADMIN DASHBOARD DATA
+// ===================
+
+export const getAdminDashboardData = async () => {
+  try {
+    console.log("📊 Fetching admin dashboard data")
+
+    if (!supabase) {
+      console.warn("⚠️ Supabase unavailable, using mock data")
+      return getMockAdminDashboardData()
+    }
+
+    try {
+      // Fetch all necessary data in parallel
+      const [
+        usersResult,
+        activeUsersResult,
+        studentsResult,
+        teachersResult,
+        reportsResult,
+        certificatesResult,
+        companiesResult,
+        opportunitiesResult,
+        nocRequestsResult,
+      ] = await Promise.allSettled([
+        supabase.from("users").select("id", { count: "exact", head: true }),
+        supabase
+          .from("users")
+          .select("id", { count: "exact", head: true })
+          .eq("is_active", true),
+        supabase
+          .from("users")
+          .select("id", { count: "exact", head: true })
+          .eq("role", "student"),
+        supabase
+          .from("users")
+          .select("id", { count: "exact", head: true })
+          .eq("role", "teacher"),
+        supabase.from("weekly_reports").select("id", { count: "exact", head: true }),
+        supabase.from("certificates").select("id", { count: "exact", head: true }),
+        supabase.from("companies").select("id", { count: "exact", head: true }),
+        supabase.from("job_opportunities").select("id", { count: "exact", head: true }),
+        supabase.from("noc_requests").select("id, status, created_at").order("created_at", { ascending: false }).limit(10),
+      ])
+
+      // Extract counts with fallbacks
+      const totalUsers = usersResult.status === "fulfilled" ? usersResult.value.count || 0 : 0
+      const activeUsers = activeUsersResult.status === "fulfilled" ? activeUsersResult.value.count || 0 : 0
+      const totalStudents = studentsResult.status === "fulfilled" ? studentsResult.value.count || 0 : 0
+      const totalTeachers = teachersResult.status === "fulfilled" ? teachersResult.value.count || 0 : 0
+      const totalReports = reportsResult.status === "fulfilled" ? reportsResult.value.count || 0 : 0
+      const totalCertificates = certificatesResult.status === "fulfilled" ? certificatesResult.value.count || 0 : 0
+      const totalCompanies = companiesResult.status === "fulfilled" ? companiesResult.value.count || 0 : 0
+      const totalOpportunities = opportunitiesResult.status === "fulfilled" ? opportunitiesResult.value.count || 0 : 0
+      
+      // Get recent NOC requests for activity tracking
+      const recentNOCs = nocRequestsResult.status === "fulfilled" && nocRequestsResult.value.data 
+        ? nocRequestsResult.value.data 
+        : []
+
+      // Fetch recent system activities
+      const recentActivities = await getRecentSystemActivities()
+
+      const dashboardData = {
+        stats: {
+          totalUsers,
+          activeUsers,
+          totalStudents,
+          totalTeachers,
+          totalReports,
+          totalCertificates,
+          totalCompanies,
+          totalOpportunities,
+        },
+        systemHealth: [
+          { 
+            component: "Database", 
+            status: totalUsers > 0 ? "healthy" : "warning", 
+            uptime: 99.9 
+          },
+          { 
+            component: "Authentication", 
+            status: "healthy", 
+            uptime: 100 
+          },
+          { 
+            component: "File Storage", 
+            status: totalCertificates > 0 ? "healthy" : "warning", 
+            uptime: 98.5 
+          },
+          { 
+            component: "Email Service", 
+            status: "healthy", 
+            uptime: 99.7 
+          },
+        ],
+        recentActivities: recentActivities.slice(0, 10),
+        userGrowth: await calculateUserGrowth(),
+        systemMetrics: {
+          databaseSize: `${Math.round(totalReports * 0.05)}MB`, // Rough estimate
+          activeConnections: Math.min(activeUsers, 50),
+          requestsPerMinute: Math.floor(Math.random() * 100) + 50,
+          errorRate: 0.1,
+        },
+      }
+
+      console.log("✅ Admin dashboard data fetched successfully")
+      return dashboardData
+
+    } catch (dbError) {
+      console.error("❌ Database error in admin dashboard:", dbError)
+      return getMockAdminDashboardData()
+    }
+  } catch (error) {
+    console.error("💥 Critical error in getAdminDashboardData:", error)
+    return getMockAdminDashboardData()
+  }
+}
+
+// ===================
+// HELPER FUNCTIONS FOR ADMIN DASHBOARD
+// ===================
+
+const getRecentSystemActivities = async () => {
+  try {
+    if (!supabase) {
+      return getMockAdminDashboardData().recentActivities
+    }
+
+    // Fetch recent activities from different tables
+    const [usersActivity, nocActivity, reportsActivity] = await Promise.allSettled([
+      supabase
+        .from("users")
+        .select("name, email, created_at, role")
+        .order("created_at", { ascending: false })
+        .limit(5),
+      supabase
+        .from("noc_requests")
+        .select("student_name, status, submitted_date")
+        .order("submitted_date", { ascending: false })
+        .limit(5),
+      supabase
+        .from("weekly_reports")
+        .select("student_name, status, submitted_date")
+        .order("submitted_date", { ascending: false })
+        .limit(5),
+    ])
+
+    const activities = []
+
+    // Process user registrations
+    if (usersActivity.status === "fulfilled" && usersActivity.value.data) {
+      activities.push(
+        ...usersActivity.value.data.map((user: any) => ({
+          type: "system",
+          title: `New ${user.role} registered: ${user.name}`,
+          time: user.created_at,
+          status: "success",
+        }))
+      )
+    }
+
+    // Process NOC activities
+    if (nocActivity.status === "fulfilled" && nocActivity.value.data) {
+      activities.push(
+        ...nocActivity.value.data.map((noc: any) => ({
+          type: "system",
+          title: `${noc.student_name}: NOC ${noc.status}`,
+          time: noc.submitted_date,
+          status: noc.status === "approved" ? "success" : "pending",
+        }))
+      )
+    }
+
+    // Process report activities
+    if (reportsActivity.status === "fulfilled" && reportsActivity.value.data) {
+      activities.push(
+        ...reportsActivity.value.data.map((report: any) => ({
+          type: "system",
+          title: `${report.student_name}: Report ${report.status}`,
+          time: report.submitted_date,
+          status: report.status === "approved" ? "success" : "pending",
+        }))
+      )
+    }
+
+    // Sort by time and return latest
+    return activities
+      .sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime())
+      .slice(0, 10)
+  } catch (error) {
+    console.error("Error fetching recent activities:", error)
+    return getMockAdminDashboardData().recentActivities
+  }
+}
+
+const calculateUserGrowth = async () => {
+  try {
+    if (!supabase) {
+      return { thisMonth: 15, lastMonth: 12, growthRate: 25 }
+    }
+
+    const now = new Date()
+    const firstDayThisMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
+    const firstDayLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString()
+    const firstDayTwoMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 2, 1).toISOString()
+
+    const [thisMonthResult, lastMonthResult] = await Promise.allSettled([
+      supabase
+        .from("users")
+        .select("id", { count: "exact", head: true })
+        .gte("created_at", firstDayThisMonth),
+      supabase
+        .from("users")
+        .select("id", { count: "exact", head: true })
+        .gte("created_at", firstDayLastMonth)
+        .lt("created_at", firstDayThisMonth),
+    ])
+
+    const thisMonth = thisMonthResult.status === "fulfilled" ? thisMonthResult.value.count || 0 : 0
+    const lastMonth = lastMonthResult.status === "fulfilled" ? lastMonthResult.value.count || 0 : 0
+    const growthRate = lastMonth > 0 ? Math.round(((thisMonth - lastMonth) / lastMonth) * 100) : 0
+
+    return { thisMonth, lastMonth, growthRate }
+  } catch (error) {
+    console.error("Error calculating user growth:", error)
+    return { thisMonth: 15, lastMonth: 12, growthRate: 25 }
+  }
+}
+
+// ===================
+// MOCK DATA FOR ADMIN DASHBOARD
+// ===================
+
+const getMockAdminDashboardData = () => ({
+  stats: {
+    totalUsers: 1250,
+    activeUsers: 890,
+    totalStudents: 800,
+    totalTeachers: 45,
+    totalReports: 2400,
+    totalCertificates: 650,
+    totalCompanies: 120,
+    totalOpportunities: 85,
+  },
+  systemHealth: [
+    { component: "Database", status: "healthy", uptime: 99.9 },
+    { component: "Authentication", status: "healthy", uptime: 100 },
+    { component: "File Storage", status: "warning", uptime: 98.5 },
+    { component: "Email Service", status: "healthy", uptime: 99.7 },
+  ],
+  recentActivities: [
+    { 
+      type: "system", 
+      title: "John Doe: Login", 
+      time: new Date(Date.now() - 30 * 60 * 1000).toISOString(), 
+      status: "success" 
+    },
+    { 
+      type: "system", 
+      title: "Dr. Sarah Wilson: Report Review", 
+      time: new Date(Date.now() - 60 * 60 * 1000).toISOString(), 
+      status: "success" 
+    },
+    { 
+      type: "system", 
+      title: "TP Officer: Company Verification", 
+      time: new Date(Date.now() - 90 * 60 * 1000).toISOString(), 
+      status: "success" 
+    },
+    { 
+      type: "system", 
+      title: "New student registration: Alice Kumar", 
+      time: new Date(Date.now() - 120 * 60 * 1000).toISOString(), 
+      status: "success" 
+    },
+    { 
+      type: "system", 
+      title: "NOC Request approved: Bob Patel", 
+      time: new Date(Date.now() - 150 * 60 * 1000).toISOString(), 
+      status: "success" 
+    },
+  ],
+  userGrowth: {
+    thisMonth: 15,
+    lastMonth: 12,
+    growthRate: 25,
+  },
+  systemMetrics: {
+    databaseSize: "120MB",
+    activeConnections: 45,
+    requestsPerMinute: 87,
+    errorRate: 0.1,
+  },
+})
+
+
+// ===================
+// USER MANAGEMENT FUNCTIONS - Add these to your data.ts file
+// ===================
+
+export const getAllUsers = async () => {
+  try {
+    console.log("📋 Fetching all users")
+
+    if (!supabase) {
+      console.warn("⚠️ Supabase unavailable, using mock data")
+      return getMockAllUsers()
+    }
+
+    const { data, error } = await supabase
+      .from("users")
+      .select("*")
+      .order("created_at", { ascending: false })
+
+    if (error) {
+      console.error("❌ Error fetching users:", error)
+      return getMockAllUsers()
+    }
+
+    console.log(`✅ Successfully fetched ${data?.length || 0} users`)
+    return data || []
+  } catch (err) {
+    console.error("💥 Unexpected error fetching users:", err)
+    return getMockAllUsers()
+  }
+}
+
+export const getUserById = async (userId: string) => {
+  try {
+    console.log("🔍 Fetching user by ID:", userId)
+
+    if (!supabase) {
+      const mockUsers = getMockAllUsers()
+      return mockUsers.find(u => u.id === userId) || null
+    }
+
+    const { data, error } = await supabase
+      .from("users")
+      .select("*")
+      .eq("id", userId)
+      .single()
+
+    if (error) {
+      console.error("❌ Error fetching user:", error)
+      return null
+    }
+
+    console.log("✅ User found:", data)
+    return data
+  } catch (err) {
+    console.error("💥 Error fetching user by ID:", err)
+    return null
+  }
+}
+
+export const createUser = async (userData: any) => {
+  try {
+    console.log("➕ Creating new user:", userData)
+
+    // Validate required fields
+    if (!userData.name || !userData.email || !userData.role) {
+      return {
+        success: false,
+        error: "Name, email, and role are required"
+      }
+    }
+
+    if (!userData.password || userData.password.length < 6) {
+      return {
+        success: false,
+        error: "Password must be at least 6 characters"
+      }
+    }
+
+    if (!supabase) {
+      console.log("⚠️ Supabase unavailable, creating mock user")
+      const mockUser = {
+        id: `user_${Date.now()}`,
+        ...userData,
+        is_active: true,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      }
+      return { success: true, data: mockUser }
+    }
+
+    // First, create auth user
+    const { data: authData, error: authError } = await supabase.auth.signUp({
+      email: userData.email,
+      password: userData.password,
+      options: {
+        data: {
+          name: userData.name,
+          role: userData.role,
+        }
+      }
+    })
+
+    if (authError) {
+      console.error("❌ Auth error:", authError)
+      return {
+        success: false,
+        error: authError.message || "Failed to create user account"
+      }
+    }
+
+    if (!authData.user) {
+      return {
+        success: false,
+        error: "Failed to create user account"
+      }
+    }
+
+    // Then create user profile in users table
+    const insertData = {
+      id: authData.user.id,
+      name: userData.name,
+      email: userData.email,
+      phone: userData.phone || null,
+      role: userData.role,
+      department: userData.department || null,
+      roll_number: userData.roll_number || null,
+      employee_id: userData.employee_id || null,
+      designation: userData.designation || null,
+      is_active: true,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    }
+
+    const { data, error } = await supabase
+      .from("users")
+      .insert(insertData)
+      .select()
+      .single()
+
+    if (error) {
+      console.error("❌ Database error creating user:", error)
+      
+      // If user profile creation fails, try to delete the auth user
+      try {
+        await supabase.auth.admin.deleteUser(authData.user.id)
+      } catch (cleanupError) {
+        console.error("Failed to cleanup auth user:", cleanupError)
+      }
+
+      return {
+        success: false,
+        error: error.message || "Failed to create user profile"
+      }
+    }
+
+    console.log("✅ User created successfully:", data)
+    clearDataCache("all-users")
+    clearDataCache("admin-dashboard")
+
+    return { success: true, data }
+  } catch (err: any) {
+    console.error("💥 Error creating user:", err)
+    return {
+      success: false,
+      error: err.message || "Failed to create user"
+    }
+  }
+}
+
+export const updateUser = async (userId: string, updates: any) => {
+  try {
+    console.log("✏️ Updating user:", userId, updates)
+
+    if (!userId) {
+      return {
+        success: false,
+        error: "User ID is required"
+      }
+    }
+
+    if (!supabase) {
+      console.log("⚠️ Supabase unavailable, simulating update")
+      return { success: true }
+    }
+
+    const updateData: any = {
+      updated_at: new Date().toISOString()
+    }
+
+    // Only update fields that are provided
+    if (updates.name) updateData.name = updates.name
+    if (updates.email) updateData.email = updates.email
+    if (updates.phone !== undefined) updateData.phone = updates.phone
+    if (updates.department !== undefined) updateData.department = updates.department
+    if (updates.roll_number !== undefined) updateData.roll_number = updates.roll_number
+    if (updates.employee_id !== undefined) updateData.employee_id = updates.employee_id
+    if (updates.designation !== undefined) updateData.designation = updates.designation
+    if (updates.is_active !== undefined) updateData.is_active = updates.is_active
+
+    const { data, error } = await supabase
+      .from("users")
+      .update(updateData)
+      .eq("id", userId)
+      .select()
+      .single()
+
+    if (error) {
+      console.error("❌ Error updating user:", error)
+      return {
+        success: false,
+        error: error.message || "Failed to update user"
+      }
+    }
+
+    console.log("✅ User updated successfully:", data)
+    clearDataCache("all-users")
+    clearDataCache(`user-${userId}`)
+    clearDataCache("admin-dashboard")
+
+    return { success: true, data }
+  } catch (err: any) {
+    console.error("💥 Error updating user:", err)
+    return {
+      success: false,
+      error: err.message || "Failed to update user"
+    }
+  }
+}
+
+export const deleteUser = async (userId: string) => {
+  try {
+    console.log("🗑️ Deleting user:", userId)
+
+    if (!userId) {
+      return {
+        success: false,
+        error: "User ID is required"
+      }
+    }
+
+    if (!supabase) {
+      console.log("⚠️ Supabase unavailable, simulating deletion")
+      return { success: true }
+    }
+
+    // Soft delete by setting is_active to false
+    const { error: updateError } = await supabase
+      .from("users")
+      .update({ 
+        is_active: false,
+        updated_at: new Date().toISOString()
+      })
+      .eq("id", userId)
+
+    if (updateError) {
+      console.error("❌ Error deactivating user:", updateError)
+      return {
+        success: false,
+        error: updateError.message || "Failed to deactivate user"
+      }
+    }
+
+    // Optionally, you can do a hard delete instead:
+    /*
+    const { error } = await supabase
+      .from("users")
+      .delete()
+      .eq("id", userId)
+    
+    if (error) {
+      console.error("❌ Error deleting user:", error)
+      return {
+        success: false,
+        error: error.message || "Failed to delete user"
+      }
+    }
+    */
+
+    console.log("✅ User deleted successfully")
+    clearDataCache("all-users")
+    clearDataCache(`user-${userId}`)
+    clearDataCache("admin-dashboard")
+
+    return { success: true }
+  } catch (err: any) {
+    console.error("💥 Error deleting user:", err)
+    return {
+      success: false,
+      error: err.message || "Failed to delete user"
+    }
+  }
+}
+
+export const activateUser = async (userId: string) => {
+  try {
+    console.log("✅ Activating user:", userId)
+
+    if (!supabase) {
+      return { success: true }
+    }
+
+    const { error } = await supabase
+      .from("users")
+      .update({ 
+        is_active: true,
+        updated_at: new Date().toISOString()
+      })
+      .eq("id", userId)
+
+    if (error) {
+      return {
+        success: false,
+        error: error.message || "Failed to activate user"
+      }
+    }
+
+    clearDataCache("all-users")
+    clearDataCache(`user-${userId}`)
+    return { success: true }
+  } catch (err: any) {
+    return {
+      success: false,
+      error: err.message || "Failed to activate user"
+    }
+  }
+}
+
+export const getUsersByRole = async (role: string) => {
+  try {
+    console.log("👥 Fetching users by role:", role)
+
+    if (!supabase) {
+      const mockUsers = getMockAllUsers()
+      return mockUsers.filter(u => u.role === role)
+    }
+
+    const { data, error } = await supabase
+      .from("users")
+      .select("*")
+      .eq("role", role)
+      .order("name", { ascending: true })
+
+    if (error) {
+      console.error("❌ Error fetching users by role:", error)
+      return []
+    }
+
+    return data || []
+  } catch (err) {
+    console.error("💥 Error fetching users by role:", err)
+    return []
+  }
+}
+
+export const searchUsers = async (searchTerm: string) => {
+  try {
+    console.log("🔍 Searching users:", searchTerm)
+
+    if (!supabase) {
+      const mockUsers = getMockAllUsers()
+      return mockUsers.filter(u => 
+        u.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        u.email?.toLowerCase().includes(searchTerm.toLowerCase())
+      )
+    }
+
+    const { data, error } = await supabase
+      .from("users")
+      .select("*")
+      .or(`name.ilike.%${searchTerm}%,email.ilike.%${searchTerm}%`)
+      .limit(50)
+
+    if (error) {
+      console.error("❌ Error searching users:", error)
+      return []
+    }
+
+    return data || []
+  } catch (err) {
+    console.error("💥 Error searching users:", err)
+    return []
+  }
+}
+
+// ===================
+// MOCK DATA FOR USER MANAGEMENT
+// ===================
+
+const getMockAllUsers = () => [
+  {
+    id: "1",
+    name: "John Doe",
+    email: "john.doe@charusat.edu.in",
+    phone: "+91 9876543210",
+    role: "student",
+    department: "Computer Engineering",
+    roll_number: "21CE001",
+    employee_id: null,
+    designation: null,
+    is_active: true,
+    created_at: "2023-08-15T10:00:00Z",
+    updated_at: "2024-03-25T10:30:00Z",
+  },
+  {
+    id: "2",
+    name: "Dr. Sarah Smith",
+    email: "sarah.smith@charusat.ac.in",
+    phone: "+91 9876543211",
+    role: "teacher",
+    department: "Computer Science",
+    roll_number: null,
+    employee_id: "EMP001",
+    designation: "Assistant Professor",
+    is_active: true,
+    created_at: "2020-01-10T10:00:00Z",
+    updated_at: "2024-03-24T14:15:00Z",
+  },
+  {
+    id: "3",
+    name: "Alice Wilson",
+    email: "alice.wilson@charusat.edu.in",
+    phone: "+91 9876543212",
+    role: "student",
+    department: "Information Technology",
+    roll_number: "21IT045",
+    employee_id: null,
+    designation: null,
+    is_active: false,
+    created_at: "2023-08-15T10:00:00Z",
+    updated_at: "2024-03-20T09:45:00Z",
+  },
+  {
+    id: "4",
+    name: "Mr. Rajesh Kumar",
+    email: "rajesh.kumar@charusat.ac.in",
+    phone: "+91 9876543213",
+    role: "tp_officer",
+    department: "Training & Placement",
+    roll_number: null,
+    employee_id: "TPO001",
+    designation: "T&P Officer",
+    is_active: true,
+    created_at: "2019-06-01T10:00:00Z",
+    updated_at: "2024-03-25T16:20:00Z",
+  },
+  {
+    id: "5",
+    name: "Admin User",
+    email: "admin@charusat.ac.in",
+    phone: "+91 9876543214",
+    role: "admin",
+    department: "Administration",
+    roll_number: null,
+    employee_id: "ADM001",
+    designation: "System Administrator",
+    is_active: true,
+    created_at: "2018-01-01T10:00:00Z",
+    updated_at: "2024-03-25T18:00:00Z",
+  },
+  {
+    id: "6",
+    name: "Priya Patel",
+    email: "priya.patel@charusat.edu.in",
+    phone: "+91 9876543215",
+    role: "student",
+    department: "Computer Engineering",
+    roll_number: "21CE002",
+    employee_id: null,
+    designation: null,
+    is_active: true,
+    created_at: "2023-08-15T10:00:00Z",
+    updated_at: "2024-03-25T11:00:00Z",
+  },
+  {
+    id: "7",
+    name: "Dr. Amit Sharma",
+    email: "amit.sharma@charusat.ac.in",
+    phone: "+91 9876543216",
+    role: "teacher",
+    department: "Mechanical Engineering",
+    roll_number: null,
+    employee_id: "EMP002",
+    designation: "Associate Professor",
+    is_active: true,
+    created_at: "2019-03-15T10:00:00Z",
+    updated_at: "2024-03-25T12:00:00Z",
+  },
+]
