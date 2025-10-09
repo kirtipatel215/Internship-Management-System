@@ -24,17 +24,40 @@ import { getAllCompanies, createCompany, verifyCompany } from "@/lib/data"
 import { useToast } from "@/hooks/use-toast"
 
 export default function TPOfficerCompanies() {
-  const [companies, setCompanies] = useState([])
+  const [companies, setCompanies] = useState<any[]>([]) // Initialize as empty array
   const [showAddForm, setShowAddForm] = useState(false)
   const [searchTerm, setSearchTerm] = useState("")
   const [filterStatus, setFilterStatus] = useState("all")
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
   const { toast } = useToast()
 
   useEffect(() => {
-    const loadCompanies = () => {
-      const companiesData = getAllCompanies()
-      setCompanies(companiesData)
+    const loadCompanies = async () => {
+      try {
+        setIsLoading(true)
+        console.log("Loading companies...")
+        const companiesData = await getAllCompanies()
+        
+        // Ensure we always have an array
+        if (Array.isArray(companiesData)) {
+          console.log(`Loaded ${companiesData.length} companies`)
+          setCompanies(companiesData)
+        } else {
+          console.warn("Companies data is not an array:", companiesData)
+          setCompanies([])
+        }
+      } catch (error) {
+        console.error("Error loading companies:", error)
+        setCompanies([])
+        toast({
+          title: "Error",
+          description: "Failed to load companies. Please refresh the page.",
+          variant: "destructive",
+        })
+      } finally {
+        setIsLoading(false)
+      }
     }
     loadCompanies()
   }, [])
@@ -46,7 +69,7 @@ export default function TPOfficerCompanies() {
     const formData = new FormData(e.target as HTMLFormElement)
 
     try {
-      const newCompany = createCompany({
+      const newCompany = await createCompany({
         name: formData.get("name") as string,
         industry: formData.get("industry") as string,
         location: formData.get("location") as string,
@@ -55,11 +78,9 @@ export default function TPOfficerCompanies() {
         contactEmail: formData.get("contactEmail") as string,
         contactPhone: formData.get("contactPhone") as string,
         description: formData.get("description") as string,
-        employees: formData.get("employees") as string,
-        establishedYear: formData.get("establishedYear") as string,
       })
 
-      setCompanies((prev) => [...prev, newCompany])
+      setCompanies((prev) => [newCompany, ...prev])
       setShowAddForm(false)
 
       toast({
@@ -69,10 +90,11 @@ export default function TPOfficerCompanies() {
 
       // Reset form
       ;(e.target as HTMLFormElement).reset()
-    } catch (error) {
+    } catch (error: any) {
+      console.error("Error adding company:", error)
       toast({
         title: "Error",
-        description: "Failed to add company. Please try again.",
+        description: error.message || "Failed to add company. Please try again.",
         variant: "destructive",
       })
     } finally {
@@ -80,30 +102,52 @@ export default function TPOfficerCompanies() {
     }
   }
 
-  const handleVerifyCompany = (companyId: number) => {
-    verifyCompany(companyId, "T&P Officer")
-    setCompanies((prev) =>
-      prev.map((company) =>
-        company.id === companyId
-          ? { ...company, verified: true, status: "active", verifiedDate: new Date().toISOString() }
-          : company,
-      ),
-    )
+  const handleVerifyCompany = async (companyId: number) => {
+    try {
+      const result = await verifyCompany(companyId, "T&P Officer")
+      
+      if (result.success) {
+        setCompanies((prev) =>
+          prev.map((company) =>
+            company.id === companyId
+              ? { ...company, verified: true, status: "active" }
+              : company
+          )
+        )
 
-    toast({
-      title: "Company Verified",
-      description: "Company has been verified successfully.",
-    })
+        toast({
+          title: "Company Verified",
+          description: "Company has been verified successfully.",
+        })
+      } else {
+        throw new Error(result.error || "Failed to verify company")
+      }
+    } catch (error: any) {
+      console.error("Error verifying company:", error)
+      toast({
+        title: "Error",
+        description: error.message || "Failed to verify company. Please try again.",
+        variant: "destructive",
+      })
+    }
   }
 
-  const filteredCompanies = companies.filter((company) => {
-    const searchMatch = company.name.toLowerCase().includes(searchTerm.toLowerCase())
-    const statusMatch = filterStatus === "all" || company.status === filterStatus
-    return searchMatch && statusMatch
-  })
+  // Safe filtering with array check
+  const filteredCompanies = Array.isArray(companies) 
+    ? companies.filter((company) => {
+        const searchMatch = company.name?.toLowerCase().includes(searchTerm.toLowerCase())
+        const statusMatch = filterStatus === "all" || company.status === filterStatus
+        return searchMatch && statusMatch
+      })
+    : []
 
-  const verifiedCount = companies.filter((company) => company.verified).length
-  const pendingCount = companies.filter((company) => !company.verified).length
+  const verifiedCount = Array.isArray(companies) 
+    ? companies.filter((company) => company.verified).length 
+    : 0
+    
+  const pendingCount = Array.isArray(companies) 
+    ? companies.filter((company) => !company.verified).length 
+    : 0
 
   return (
     <DashboardLayout>
@@ -166,25 +210,6 @@ export default function TPOfficerCompanies() {
                   <div className="space-y-2">
                     <Label htmlFor="contactPhone">Contact Phone</Label>
                     <Input id="contactPhone" name="contactPhone" placeholder="+91 9876543210" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="employees">Company Size</Label>
-                    <Select name="employees">
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select size" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="1-50">1-50 employees</SelectItem>
-                        <SelectItem value="51-200">51-200 employees</SelectItem>
-                        <SelectItem value="201-500">201-500 employees</SelectItem>
-                        <SelectItem value="501-1000">501-1000 employees</SelectItem>
-                        <SelectItem value="1000+">1000+ employees</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="establishedYear">Established Year</Label>
-                    <Input id="establishedYear" name="establishedYear" type="number" placeholder="2010" />
                   </div>
                 </div>
                 <div className="space-y-2">
@@ -277,94 +302,127 @@ export default function TPOfficerCompanies() {
                 <SelectContent>
                   <SelectItem value="all">All Companies</SelectItem>
                   <SelectItem value="active">Active</SelectItem>
-                  <SelectItem value="pending">Pending</SelectItem>
+                  <SelectItem value="inactive">Inactive</SelectItem>
                 </SelectContent>
               </Select>
             </div>
           </CardContent>
         </Card>
 
-        {/* Companies List */}
-        <div className="space-y-4">
-          {filteredCompanies.map((company) => (
-            <Card key={company.id} className="hover:shadow-lg transition-shadow">
-              <CardContent className="p-4 sm:p-6">
-                <div className="flex flex-col lg:flex-row lg:justify-between lg:items-start gap-4">
-                  <div className="flex-1">
-                    <div className="flex flex-wrap items-center gap-3 mb-3">
-                      <h3 className="text-lg sm:text-xl font-semibold">{company.name}</h3>
-                      {company.verified ? (
-                        <Badge variant="default" className="bg-green-600">
-                          <CheckCircle className="h-3 w-3 mr-1" />
-                          Verified
-                        </Badge>
-                      ) : (
-                        <Badge variant="secondary">
-                          <Clock className="h-3 w-3 mr-1" />
-                          Pending
-                        </Badge>
-                      )}
-                      <Badge variant="outline">{company.industry}</Badge>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-3 text-sm">
-                      <div>
-                        <p className="text-gray-600 mb-1">
-                          <strong>Location:</strong> {company.location}
-                        </p>
-                        <p className="text-gray-600 mb-1">
-                          <strong>Contact:</strong> {company.contactPerson}
-                        </p>
-                        <p className="text-gray-600">
-                          <strong>Email:</strong> {company.contactEmail}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-gray-600 mb-1">
-                          <strong>Size:</strong> {company.employees} employees
-                        </p>
-                        <p className="text-gray-600 mb-1">
-                          <strong>Established:</strong> {company.establishedYear}
-                        </p>
-                        {company.verifiedDate && (
-                          <p className="text-gray-600">
-                            <strong>Verified:</strong> {new Date(company.verifiedDate).toLocaleDateString()}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                    <p className="text-gray-700 text-sm mb-3">{company.description}</p>
-                  </div>
-                  <div className="flex flex-col gap-2 lg:ml-4">
-                    <Button variant="outline" size="sm" className="w-full lg:w-auto bg-transparent">
-                      <Eye className="h-4 w-4 mr-1" />
-                      View Details
-                    </Button>
-                    {company.website && (
-                      <Button variant="outline" size="sm" className="w-full lg:w-auto bg-transparent">
-                        <ExternalLink className="h-4 w-4 mr-1" />
-                        Visit Website
-                      </Button>
-                    )}
-                    {!company.verified && (
-                      <Button size="sm" onClick={() => handleVerifyCompany(company.id)} className="w-full lg:w-auto">
-                        <CheckCircle className="h-4 w-4 mr-1" />
-                        Verify Company
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+        {/* Loading State */}
+        {isLoading && (
+          <Card>
+            <CardContent className="p-8 text-center">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+              <p className="text-gray-500">Loading companies...</p>
+            </CardContent>
+          </Card>
+        )}
 
-        {filteredCompanies.length === 0 && (
+        {/* Companies List */}
+        {!isLoading && filteredCompanies.length > 0 && (
+          <div className="space-y-4">
+            {filteredCompanies.map((company) => (
+              <Card key={company.id} className="hover:shadow-lg transition-shadow">
+                <CardContent className="p-4 sm:p-6">
+                  <div className="flex flex-col lg:flex-row lg:justify-between lg:items-start gap-4">
+                    <div className="flex-1">
+                      <div className="flex flex-wrap items-center gap-3 mb-3">
+                        <h3 className="text-lg sm:text-xl font-semibold">{company.name}</h3>
+                        {company.verified ? (
+                          <Badge variant="default" className="bg-green-600">
+                            <CheckCircle className="h-3 w-3 mr-1" />
+                            Verified
+                          </Badge>
+                        ) : (
+                          <Badge variant="secondary">
+                            <Clock className="h-3 w-3 mr-1" />
+                            Pending
+                          </Badge>
+                        )}
+                        <Badge variant="outline">{company.industry}</Badge>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-3 text-sm">
+                        <div>
+                          <p className="text-gray-600 mb-1">
+                            <strong>Location:</strong> {company.location}
+                          </p>
+                          <p className="text-gray-600 mb-1">
+                            <strong>Contact:</strong> {company.contactPerson || company.contact_person}
+                          </p>
+                          <p className="text-gray-600">
+                            <strong>Email:</strong> {company.contactEmail || company.contact_email}
+                          </p>
+                        </div>
+                        <div>
+                          {company.contactPhone || company.contact_phone ? (
+                            <p className="text-gray-600 mb-1">
+                              <strong>Phone:</strong> {company.contactPhone || company.contact_phone}
+                            </p>
+                          ) : null}
+                          {company.website && (
+                            <p className="text-gray-600 mb-1">
+                              <strong>Website:</strong>{" "}
+                              <a 
+                                href={company.website} 
+                                target="_blank" 
+                                rel="noopener noreferrer"
+                                className="text-blue-600 hover:underline"
+                              >
+                                {company.website}
+                              </a>
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                      {company.description && (
+                        <p className="text-gray-700 text-sm mb-3">{company.description}</p>
+                      )}
+                    </div>
+                    <div className="flex flex-col gap-2 lg:ml-4">
+                      <Button variant="outline" size="sm" className="w-full lg:w-auto bg-transparent">
+                        <Eye className="h-4 w-4 mr-1" />
+                        View Details
+                      </Button>
+                      {company.website && (
+                        <Button 
+                          variant="outline" 
+                          size="sm" 
+                          className="w-full lg:w-auto bg-transparent"
+                          onClick={() => window.open(company.website, '_blank')}
+                        >
+                          <ExternalLink className="h-4 w-4 mr-1" />
+                          Visit Website
+                        </Button>
+                      )}
+                      {!company.verified && (
+                        <Button 
+                          size="sm" 
+                          onClick={() => handleVerifyCompany(company.id)} 
+                          className="w-full lg:w-auto"
+                        >
+                          <CheckCircle className="h-4 w-4 mr-1" />
+                          Verify Company
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
+
+        {/* Empty State */}
+        {!isLoading && filteredCompanies.length === 0 && (
           <Card>
             <CardContent className="p-8 text-center">
               <Building className="h-12 w-12 mx-auto text-gray-400 mb-4" />
               <p className="text-gray-500 mb-2">No companies found</p>
               <p className="text-sm text-gray-400">
-                Try adjusting your search criteria or add a new company to get started.
+                {companies.length === 0 
+                  ? "Click 'Add Company' to get started." 
+                  : "Try adjusting your search criteria."}
               </p>
             </CardContent>
           </Card>

@@ -1469,6 +1469,455 @@ export const updateStudentAssignment = async (teacherId: string, studentId: stri
 // ===================
 // TP OFFICER DASHBOARD
 // ===================
+// Add these functions to your data.ts file
+// Updated to match your exact database schema
+
+// ===================
+// COMPANIES MANAGEMENT - SCHEMA ALIGNED
+// ===================
+
+export const getAllCompanies = async () => {
+  try {
+    console.log("[v0] Fetching all companies")
+
+    if (!supabase) {
+      console.log("[v0] Supabase not available, using mock data")
+      return getMockCompanies()
+    }
+
+    const { data, error } = await supabase
+      .from("companies")
+      .select("*")
+      .order("created_at", { ascending: false })
+
+    if (error) {
+      console.error("[v0] Error fetching companies:", error)
+      return getMockCompanies()
+    }
+
+    console.log(`[v0] Successfully fetched ${data?.length || 0} companies`)
+    return data || []
+  } catch (err) {
+    console.error("[v0] Unexpected error fetching companies:", err)
+    return getMockCompanies()
+  }
+}
+
+export const createCompany = async (companyData: any) => {
+  try {
+    console.log("[v0] Creating company with data:", companyData)
+
+    if (!companyData.name) {
+      throw new Error("Company name is required")
+    }
+
+    // Match exact schema: companies table structure
+    const insertData = {
+      name: companyData.name,
+      description: companyData.description || null,
+      website: companyData.website || null,
+      industry: companyData.industry,
+      location: companyData.location,
+      contact_email: companyData.contactEmail,
+      contact_phone: companyData.contactPhone || null,
+      contact_person: companyData.contactPerson,
+      status: "active", // Default status
+      verified: false, // New companies start as unverified
+    }
+
+    if (!supabase) {
+      console.log("[v0] Supabase not available, creating mock company")
+      const mockCompany = {
+        id: Math.floor(Math.random() * 10000) + 1000,
+        ...insertData,
+        // Map for UI compatibility
+        contactPerson: insertData.contact_person,
+        contactEmail: insertData.contact_email,
+        contactPhone: insertData.contact_phone,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }
+      return mockCompany
+    }
+
+    const { data, error } = await supabase
+      .from("companies")
+      .insert(insertData)
+      .select()
+      .single()
+
+    if (error) {
+      console.error("[v0] Database error creating company:", error)
+      throw new Error(`Database error: ${error.message}`)
+    }
+
+    console.log("[v0] Company created successfully:", data)
+
+    // Transform snake_case to camelCase for UI compatibility
+    const transformedData = {
+      ...data,
+      contactPerson: data.contact_person,
+      contactEmail: data.contact_email,
+      contactPhone: data.contact_phone,
+    }
+
+    clearDataCache("companies")
+    clearDataCache("tp-officer-dashboard")
+
+    return transformedData
+  } catch (error: any) {
+    console.error("[v0] Error creating company:", error)
+    throw new Error(error.message || "Failed to create company")
+  }
+}
+
+export const verifyCompany = async (companyId: number, verifierId: string) => {
+  try {
+    console.log("[v0] Verifying company:", { companyId, verifierId })
+
+    if (!supabase) {
+      console.log("[v0] Supabase not available, returning mock success")
+      return { success: true }
+    }
+
+    const { data, error } = await supabase
+      .from("companies")
+      .update({
+        verified: true,
+        status: "active",
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", companyId)
+      .select()
+      .single()
+
+    if (error) {
+      console.error("[v0] Error verifying company:", error)
+      return { success: false, error: error.message }
+    }
+
+    console.log("[v0] Company verified successfully:", data)
+
+    clearDataCache("companies")
+    clearDataCache("tp-officer-dashboard")
+
+    return { success: true, data }
+  } catch (error: any) {
+    console.error("[v0] Error verifying company:", error)
+    return { success: false, error: error.message }
+  }
+}
+
+export const updateCompany = async (companyId: number, updates: any) => {
+  try {
+    console.log("[v0] Updating company:", { companyId, updates })
+
+    if (!supabase) {
+      console.log("[v0] Supabase not available, returning mock success")
+      return { success: true }
+    }
+
+    const updateData: any = {
+      updated_at: new Date().toISOString(),
+    }
+
+    // Map UI fields to DB schema
+    if (updates.name) updateData.name = updates.name
+    if (updates.description) updateData.description = updates.description
+    if (updates.website) updateData.website = updates.website
+    if (updates.industry) updateData.industry = updates.industry
+    if (updates.location) updateData.location = updates.location
+    if (updates.contactEmail) updateData.contact_email = updates.contactEmail
+    if (updates.contactPhone) updateData.contact_phone = updates.contactPhone
+    if (updates.contactPerson) updateData.contact_person = updates.contactPerson
+    if (updates.status) updateData.status = updates.status
+    if (updates.verified !== undefined) updateData.verified = updates.verified
+
+    const { data, error } = await supabase
+      .from("companies")
+      .update(updateData)
+      .eq("id", companyId)
+      .select()
+      .single()
+
+    if (error) {
+      console.error("[v0] Error updating company:", error)
+      return { success: false, error: error.message }
+    }
+
+    console.log("[v0] Company updated successfully:", data)
+
+    clearDataCache("companies")
+    clearDataCache(`company-${companyId}`)
+
+    return { success: true, data }
+  } catch (error: any) {
+    console.error("[v0] Error updating company:", error)
+    return { success: false, error: error.message }
+  }
+}
+
+// ===================
+// JOB OPPORTUNITIES MANAGEMENT - SCHEMA ALIGNED
+// ===================
+
+export const createOpportunity = async (opportunityData: any) => {
+  try {
+    console.log("[v0] Creating opportunity with data:", opportunityData)
+
+    if (!opportunityData.title || !opportunityData.company) {
+      throw new Error("Title and company are required")
+    }
+
+    // Match exact schema: job_opportunities table structure
+    const insertData = {
+      company_name: opportunityData.company, // Required field
+      title: opportunityData.title, // Required field
+      description: opportunityData.description, // Required field
+      job_type: opportunityData.type || "internship", // Default to internship
+      location: opportunityData.location, // Required field
+      duration: opportunityData.duration || null,
+      requirements: opportunityData.requirements || [], // Array field
+      stipend: opportunityData.stipend || null,
+      positions: opportunityData.positions || 1,
+      deadline: opportunityData.deadline || null,
+      verified: opportunityData.verified || false,
+      status: "active",
+      posted_by: opportunityData.postedBy || null,
+      posted_date: new Date().toISOString(),
+      applicants: 0, // Start with 0 applicants
+    }
+
+    if (!supabase) {
+      console.log("[v0] Supabase not available, creating mock opportunity")
+      const mockOpportunity = {
+        id: Math.floor(Math.random() * 10000) + 1000,
+        ...insertData,
+        // Map for UI compatibility
+        company: insertData.company_name,
+        type: insertData.job_type,
+        postedDate: insertData.posted_date,
+        postedBy: insertData.posted_by,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }
+      return mockOpportunity
+    }
+
+    const { data, error } = await supabase
+      .from("job_opportunities")
+      .insert(insertData)
+      .select()
+      .single()
+
+    if (error) {
+      console.error("[v0] Database error creating opportunity:", error)
+      throw new Error(`Database error: ${error.message}`)
+    }
+
+    console.log("[v0] Opportunity created successfully:", data)
+
+    // Transform to UI format
+    const transformedData = {
+      ...data,
+      company: data.company_name,
+      type: data.job_type,
+      postedDate: data.posted_date,
+      postedBy: data.posted_by,
+    }
+
+    clearDataCache("opportunities")
+    clearDataCache("tp-officer-dashboard")
+
+    return transformedData
+  } catch (error: any) {
+    console.error("[v0] Error creating opportunity:", error)
+    throw new Error(error.message || "Failed to create opportunity")
+  }
+}
+
+export const updateOpportunity = async (opportunityId: number, updates: any) => {
+  try {
+    console.log("[v0] Updating opportunity:", { opportunityId, updates })
+
+    if (!supabase) {
+      console.log("[v0] Supabase not available, returning mock success")
+      return { success: true }
+    }
+
+    const updateData: any = {
+      updated_at: new Date().toISOString(),
+    }
+
+    // Map UI fields to DB schema
+    if (updates.title) updateData.title = updates.title
+    if (updates.company) updateData.company_name = updates.company
+    if (updates.location) updateData.location = updates.location
+    if (updates.duration) updateData.duration = updates.duration
+    if (updates.type) updateData.job_type = updates.type
+    if (updates.description) updateData.description = updates.description
+    if (updates.requirements) updateData.requirements = updates.requirements
+    if (updates.stipend) updateData.stipend = updates.stipend
+    if (updates.positions) updateData.positions = updates.positions
+    if (updates.deadline) updateData.deadline = updates.deadline
+    if (updates.status) updateData.status = updates.status
+    if (updates.verified !== undefined) updateData.verified = updates.verified
+
+    const { data, error } = await supabase
+      .from("job_opportunities")
+      .update(updateData)
+      .eq("id", opportunityId)
+      .select()
+      .single()
+
+    if (error) {
+      console.error("[v0] Error updating opportunity:", error)
+      return { success: false, error: error.message }
+    }
+
+    console.log("[v0] Opportunity updated successfully:", data)
+
+    clearDataCache("opportunities")
+    clearDataCache(`opportunity-${opportunityId}`)
+
+    return { success: true, data }
+  } catch (error: any) {
+    console.error("[v0] Error updating opportunity:", error)
+    return { success: false, error: error.message }
+  }
+}
+
+export const deleteOpportunity = async (opportunityId: number) => {
+  try {
+    console.log("[v0] Deleting opportunity:", opportunityId)
+
+    if (!supabase) {
+      console.log("[v0] Supabase not available, returning mock success")
+      return { success: true }
+    }
+
+    // Soft delete by updating status to inactive
+    const { error } = await supabase
+      .from("job_opportunities")
+      .update({
+        status: "inactive",
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", opportunityId)
+
+    if (error) {
+      console.error("[v0] Error deleting opportunity:", error)
+      return { success: false, error: error.message }
+    }
+
+    console.log("[v0] Opportunity deleted successfully")
+
+    clearDataCache("opportunities")
+    clearDataCache(`opportunity-${opportunityId}`)
+
+    return { success: true }
+  } catch (error: any) {
+    console.error("[v0] Error deleting opportunity:", error)
+    return { success: false, error: error.message }
+  }
+}
+
+export const getOpportunityById = async (opportunityId: number) => {
+  try {
+    console.log("[v0] Fetching opportunity:", opportunityId)
+
+    if (!supabase) {
+      const mockOpps = getMockOpportunities()
+      return mockOpps.find(o => o.id === opportunityId) || null
+    }
+
+    const { data, error } = await supabase
+      .from("job_opportunities")
+      .select("*")
+      .eq("id", opportunityId)
+      .single()
+
+    if (error) {
+      console.error("[v0] Error fetching opportunity:", error)
+      return null
+    }
+
+    // Transform to UI format
+    return {
+      ...data,
+      company: data.company_name,
+      type: data.job_type,
+      postedDate: data.posted_date,
+      postedBy: data.posted_by,
+    }
+  } catch (error: any) {
+    console.error("[v0] Error fetching opportunity:", error)
+    return null
+  }
+}
+
+// ===================
+// MOCK DATA FUNCTIONS
+// ===================
+
+const getMockCompanies = () => [
+  {
+    id: 1,
+    name: "TechCorp Solutions",
+    description: "Leading IT solutions provider specializing in cloud computing and AI",
+    website: "https://techcorp.com",
+    industry: "Information Technology",
+    location: "Bangalore, Karnataka",
+    contact_email: "rajesh.kumar@techcorp.com",
+    contact_phone: "+91 9876543210",
+    contact_person: "Mr. Rajesh Kumar",
+    status: "active",
+    verified: true,
+    created_at: "2024-01-01T00:00:00Z",
+    updated_at: "2024-01-15T10:30:00Z",
+    // UI-friendly names
+    contactPerson: "Mr. Rajesh Kumar",
+    contactEmail: "rajesh.kumar@techcorp.com",
+    contactPhone: "+91 9876543210",
+  },
+  {
+    id: 2,
+    name: "DataTech Analytics",
+    description: "Data analytics and business intelligence solutions",
+    website: "https://datatech.com",
+    industry: "Information Technology",
+    location: "Mumbai, Maharashtra",
+    contact_email: "sneha.joshi@datatech.com",
+    contact_phone: "+91 9876543211",
+    contact_person: "Ms. Sneha Joshi",
+    status: "active",
+    verified: true,
+    created_at: "2024-01-15T00:00:00Z",
+    updated_at: "2024-02-20T14:15:00Z",
+    contactPerson: "Ms. Sneha Joshi",
+    contactEmail: "sneha.joshi@datatech.com",
+    contactPhone: "+91 9876543211",
+  },
+  {
+    id: 3,
+    name: "InnovateLabs",
+    description: "E-commerce platform development and consulting",
+    website: "https://innovatelabs.com",
+    industry: "E-commerce",
+    location: "Pune, Maharashtra",
+    contact_email: "amit.patel@innovatelabs.com",
+    contact_phone: "+91 9876543212",
+    contact_person: "Mr. Amit Patel",
+    status: "active",
+    verified: false,
+    created_at: "2024-03-01T00:00:00Z",
+    updated_at: "2024-03-01T00:00:00Z",
+    contactPerson: "Mr. Amit Patel",
+    contactEmail: "amit.patel@innovatelabs.com",
+    contactPhone: "+91 9876543212",
+  },
+]
+
 
 export const getTPOfficerDashboardData = async (cacheKey = "tp-officer-dashboard") => {
   try {
