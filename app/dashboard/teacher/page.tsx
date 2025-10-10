@@ -1,4 +1,3 @@
-
 "use client"
 
 import { AuthGuard } from "@/components/auth-guard"
@@ -26,34 +25,45 @@ import {
   RefreshCw,
   User,
   FileCheck,
+  Database,
 } from "lucide-react"
 import Link from "next/link"
 import { getCurrentUser } from "@/lib/auth-supabase"
-import { getTeacherDashboardData } from "@/lib/data"
-import { useEffect, useState } from "react"
+import { getTeacherDashboardData, debugTeacherDashboard } from "@/lib/data"
+import { useEffect, useState, useCallback } from "react"
 
 interface TeacherDashboardData {
   totalStudents: number
   pendingReports: number
   pendingCertificates: number
-  pendingNOCRequests?: number
+  pendingNOCRequests: number
+  totalReports: number
+  approvedReports: number
+  totalCertificates: number
+  approvedCertificates: number
+  reportsThisWeek: number
+  certificatesThisMonth: number
   students: Array<{
     id: string
     name: string
     email: string
     roll_number?: string
+    department?: string
   }>
   recentReports: Array<{
     id: string
     title: string
     student_id: string
+    student_name: string
     created_at: string
     status: string
+    week_number?: number
   }>
   recentCertificates: Array<{
     id: string
     title: string
     student_id: string
+    student_name: string
     created_at: string
     status: string
   }>
@@ -101,57 +111,174 @@ export default function TeacherDashboard() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
+  const [lastRefresh, setLastRefresh] = useState<Date | null>(null)
+  const [debugMode, setDebugMode] = useState(false)
 
-  // Function to load dashboard data
-  const loadDashboardData = async (showRefreshLoader = false) => {
+  // Function to load dashboard data with proper error handling
+  const loadDashboardData = useCallback(async (showRefreshLoader = false) => {
     try {
-      if (showRefreshLoader) setRefreshing(true)
-      else setLoading(true)
+      console.log("🔄 Loading teacher dashboard data...")
+
+      if (showRefreshLoader) {
+        setRefreshing(true)
+      } else {
+        setLoading(true)
+      }
 
       setError(null)
 
-      // Get current user
+      // Step 1: Get current user
+      console.log("👤 Fetching current user...")
       const currentUser = await getCurrentUser()
+
       if (!currentUser) {
-        throw new Error("No authenticated user found")
+        throw new Error("No authenticated user found. Please sign in again.")
       }
 
+      if (currentUser.role !== "teacher") {
+        throw new Error("Access denied. This dashboard is for teachers only.")
+      }
+
+      console.log("✅ User authenticated:", currentUser.name, currentUser.email)
       setTeacherUser(currentUser)
 
-      // Fetch dashboard data from database
+      // Step 2: Fetch dashboard data
+      console.log("📊 Fetching dashboard data for teacher:", currentUser.id)
       const data = await getTeacherDashboardData(currentUser.id)
-      
-      // Ensure data has the expected structure with fallbacks
-      const sanitizedData: TeacherDashboardData = {
-        totalStudents: data?.totalStudents || 0,
-        pendingReports: data?.pendingReports || 0,
-        pendingCertificates: data?.pendingCertificates || 0,
-        pendingNOCRequests: data?.pendingNOCRequests || 0,
-        students: data?.students || [],
-        recentReports: data?.recentReports || [],
-        recentCertificates: data?.recentCertificates || [],
+
+      if (!data) {
+        throw new Error("Failed to load dashboard data from database")
       }
-      
+
+      // Step 3: Validate and sanitize data
+      const sanitizedData: TeacherDashboardData = {
+        // Core stats
+        totalStudents: Number(data.totalStudents) || 0,
+        pendingReports: Number(data.pendingReports) || 0,
+        pendingCertificates: Number(data.pendingCertificates) || 0,
+        pendingNOCRequests: Number(data.pendingNOCRequests) || 0,
+
+        // Additional stats
+        totalReports: Number(data.totalReports) || 0,
+        approvedReports: Number(data.approvedReports) || 0,
+        totalCertificates: Number(data.totalCertificates) || 0,
+        approvedCertificates: Number(data.approvedCertificates) || 0,
+        reportsThisWeek: Number(data.reportsThisWeek) || 0,
+        certificatesThisMonth: Number(data.certificatesThisMonth) || 0,
+
+        // Arrays
+        students: Array.isArray(data.students) ? data.students : [],
+        recentReports: Array.isArray(data.recentReports) ? data.recentReports : [],
+        recentCertificates: Array.isArray(data.recentCertificates) ? data.recentCertificates : [],
+      }
+
+      console.log("✅ Dashboard data loaded successfully:", {
+        students: sanitizedData.totalStudents,
+        reports: sanitizedData.totalReports,
+        certificates: sanitizedData.totalCertificates,
+        pendingReports: sanitizedData.pendingReports,
+        pendingCertificates: sanitizedData.pendingCertificates,
+        pendingNOCs: sanitizedData.pendingNOCRequests,
+      })
+
       setDashboardData(sanitizedData)
+      setLastRefresh(new Date())
     } catch (err: any) {
-      console.error("Error loading dashboard data:", err)
+      console.error("❌ Error loading dashboard data:", err)
       setError(err.message || "Failed to load dashboard data")
+
+      // Set empty data on error to prevent crashes
+      setDashboardData({
+        totalStudents: 0,
+        pendingReports: 0,
+        pendingCertificates: 0,
+        pendingNOCRequests: 0,
+        totalReports: 0,
+        approvedReports: 0,
+        totalCertificates: 0,
+        approvedCertificates: 0,
+        reportsThisWeek: 0,
+        certificatesThisMonth: 0,
+        students: [],
+        recentReports: [],
+        recentCertificates: [],
+      })
     } finally {
       setLoading(false)
       setRefreshing(false)
     }
-  }
+  }, [])
 
   // Initial load
   useEffect(() => {
     loadDashboardData()
-  }, [])
+  }, [loadDashboardData])
 
-  // Manual refresh function
+  // Manual refresh
   const handleRefresh = () => {
+    console.log("🔄 Manual refresh triggered")
     loadDashboardData(true)
   }
 
+  // Debug function
+  const handleDebug = async () => {
+    if (teacherUser) {
+      setDebugMode(true)
+      await debugTeacherDashboard(teacherUser.id)
+      setTimeout(() => setDebugMode(false), 3000)
+    }
+  }
+
+  // Auto-refresh every 5 minutes
+  useEffect(() => {
+    const interval = setInterval(() => {
+      console.log("⏰ Auto-refresh triggered (5 min)")
+      loadDashboardData(true)
+    }, 5 * 60 * 1000)
+
+    return () => clearInterval(interval)
+  }, [loadDashboardData])
+
+  // Debug button component
+  const DebugButton = () => (
+    <Button
+      variant="ghost"
+      size="sm"
+      onClick={handleDebug}
+      disabled={debugMode}
+      className="text-gray-500 hover:text-gray-700"
+    >
+      {debugMode ? (
+        <>
+          <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+          Debugging...
+        </>
+      ) : (
+        <>
+          <Database className="h-4 w-4 mr-1" />
+          Debug
+        </>
+      )}
+    </Button>
+  )
+
+  // Refresh info component
+  const RefreshInfo = () => {
+    if (!lastRefresh) return null
+
+    const timeSince = Math.floor((new Date().getTime() - lastRefresh.getTime()) / 1000)
+    const minutes = Math.floor(timeSince / 60)
+    const seconds = timeSince % 60
+
+    return (
+      <div className="text-xs text-gray-500">
+        Last updated: {minutes > 0 ? `${minutes}m ` : ""}
+        {seconds}s ago
+      </div>
+    )
+  }
+
+  // Loading state
   if (loading) {
     return (
       <AuthGuard allowedRoles={["teacher"]}>
@@ -181,7 +308,8 @@ export default function TeacherDashboard() {
     )
   }
 
-  if (error) {
+  // Error state
+  if (error && !dashboardData) {
     return (
       <AuthGuard allowedRoles={["teacher"]}>
         <DashboardLayout>
@@ -254,7 +382,7 @@ export default function TeacherDashboard() {
     )
   }
 
-  // Safe access to dashboard data with fallbacks
+  // Safe access to dashboard data
   const safeRecentReports = dashboardData.recentReports || []
   const safeRecentCertificates = dashboardData.recentCertificates || []
   const safeStudents = dashboardData.students || []
@@ -262,31 +390,31 @@ export default function TeacherDashboard() {
   const stats = [
     {
       title: "Total Students",
-      value: dashboardData.totalStudents || 0,
+      value: dashboardData.totalStudents,
       icon: Users,
       color: "blue",
-      trend: (dashboardData.totalStudents || 0) > 0 ? "Active" : "No students yet",
+      trend: dashboardData.totalStudents > 0 ? "Active" : "No students yet",
       subtitle: "Under your guidance",
     },
     {
       title: "NOC Approvals",
-      value: dashboardData.pendingNOCRequests || 0,
+      value: dashboardData.pendingNOCRequests,
       icon: FileCheck,
       color: "purple",
-      trend: (dashboardData.pendingNOCRequests || 0) > 0 ? "Pending review" : "All reviewed",
+      trend: dashboardData.pendingNOCRequests > 0 ? "Pending review" : "All reviewed",
       subtitle: "Academic approval needed",
     },
     {
       title: "Pending Reports",
-      value: dashboardData.pendingReports || 0,
+      value: dashboardData.pendingReports,
       icon: FileText,
       color: "orange",
-      trend: (dashboardData.pendingReports || 0) > 0 ? "Needs review" : "All caught up",
+      trend: dashboardData.pendingReports > 0 ? "Needs review" : "All caught up",
       subtitle: "Awaiting review",
     },
     {
       title: "Total Reports",
-      value: safeRecentReports.length,
+      value: dashboardData.totalReports,
       icon: CheckCircle,
       color: "green",
       trend: "This semester",
@@ -294,10 +422,10 @@ export default function TeacherDashboard() {
     },
     {
       title: "Pending Certificates",
-      value: dashboardData.pendingCertificates || 0,
+      value: dashboardData.pendingCertificates,
       icon: Award,
       color: "indigo",
-      trend: (dashboardData.pendingCertificates || 0) > 0 ? "Needs review" : "All reviewed",
+      trend: dashboardData.pendingCertificates > 0 ? "Needs review" : "All reviewed",
       subtitle: "Pending approval",
     },
   ]
@@ -307,7 +435,7 @@ export default function TeacherDashboard() {
     ...safeRecentReports.map((report) => ({
       id: `report-${report.id}`,
       type: "report",
-      title: `${report.title} - Student report submitted`,
+      title: `${report.title} - ${report.student_name}`,
       time: report.created_at,
       status: report.status,
       student_id: report.student_id,
@@ -315,7 +443,7 @@ export default function TeacherDashboard() {
     ...safeRecentCertificates.map((cert) => ({
       id: `certificate-${cert.id}`,
       type: "certificate",
-      title: `${cert.title} - Certificate uploaded`,
+      title: `${cert.title} - ${cert.student_name}`,
       time: cert.created_at,
       status: cert.status,
       student_id: cert.student_id,
@@ -348,7 +476,7 @@ export default function TeacherDashboard() {
                   </Badge>
                   <Badge className="bg-green-100 text-green-700 border-green-200">
                     <Target className="h-3 w-3 mr-1" />
-                    {dashboardData.totalStudents || 0} Students
+                    {dashboardData.totalStudents} Students
                   </Badge>
                 </div>
               </div>
@@ -356,7 +484,9 @@ export default function TeacherDashboard() {
                 <p className="text-sm text-gray-500 font-medium">{teacherUser?.designation || "Faculty Member"}</p>
                 <p className="text-sm text-gray-500">{teacherUser?.department || "Computer Engineering"}</p>
                 {teacherUser?.employeeId && <p className="text-sm text-gray-500">ID: {teacherUser.employeeId}</p>}
-                <div className="flex items-center lg:justify-end mt-2">
+                <div className="flex items-center lg:justify-end gap-2 mt-2">
+                  <RefreshInfo />
+                  <DebugButton />
                   <Button
                     variant="ghost"
                     size="sm"
@@ -501,28 +631,28 @@ export default function TeacherDashboard() {
                           icon: Users,
                           label: "My Students",
                           color: "blue",
-                          count: dashboardData.totalStudents || 0,
+                          count: dashboardData.totalStudents,
                         },
                         {
                           href: "/dashboard/teacher/noc",
                           icon: FileCheck,
                           label: "NOC Academic Approval",
                           color: "purple",
-                          count: dashboardData.pendingNOCRequests || 0,
+                          count: dashboardData.pendingNOCRequests,
                         },
                         {
                           href: "/dashboard/teacher/reports",
                           icon: FileText,
                           label: "Review Reports",
                           color: "orange",
-                          count: dashboardData.pendingReports || 0,
+                          count: dashboardData.pendingReports,
                         },
                         {
                           href: "/dashboard/teacher/certificates",
                           icon: Award,
                           label: "Certificates",
                           color: "green",
-                          count: dashboardData.pendingCertificates || 0,
+                          count: dashboardData.pendingCertificates,
                         },
                         {
                           href: "/dashboard/teacher/analytics",
@@ -577,7 +707,7 @@ export default function TeacherDashboard() {
                   <CardContent className="p-6">
                     {safeStudents.length > 0 ? (
                       <div className="space-y-3">
-                        {safeStudents.slice(0, 5).map((student, index) => (
+                        {safeStudents.slice(0, 5).map((student) => (
                           <div
                             key={student.id}
                             className="flex items-center space-x-3 p-3 rounded-lg bg-gray-50 hover:bg-blue-50 transition-colors duration-200"
@@ -594,9 +724,7 @@ export default function TeacherDashboard() {
 
                         {safeStudents.length > 5 && (
                           <div className="text-center pt-3 border-t border-gray-100">
-                            <p className="text-sm text-gray-500 mb-3">
-                              +{safeStudents.length - 5} more students
-                            </p>
+                            <p className="text-sm text-gray-500 mb-3">+{safeStudents.length - 5} more students</p>
                           </div>
                         )}
 
@@ -642,9 +770,7 @@ export default function TeacherDashboard() {
                           <FileCheck className="h-5 w-5 text-purple-600" />
                           <span className="font-medium text-purple-900">NOC approvals pending</span>
                         </div>
-                        <span className="text-2xl font-bold text-purple-600">
-                          {dashboardData.pendingNOCRequests || 0}
-                        </span>
+                        <span className="text-2xl font-bold text-purple-600">{dashboardData.pendingNOCRequests}</span>
                       </div>
 
                       <div className="flex justify-between items-center p-3 bg-blue-50 rounded-lg border border-blue-100">
@@ -652,7 +778,7 @@ export default function TeacherDashboard() {
                           <Clock className="h-5 w-5 text-blue-600" />
                           <span className="font-medium text-blue-900">Reports to review</span>
                         </div>
-                        <span className="text-2xl font-bold text-blue-600">{dashboardData.pendingReports || 0}</span>
+                        <span className="text-2xl font-bold text-blue-600">{dashboardData.pendingReports}</span>
                       </div>
 
                       <div className="flex justify-between items-center p-3 bg-green-50 rounded-lg border border-green-100">
@@ -660,7 +786,7 @@ export default function TeacherDashboard() {
                           <Award className="h-5 w-5 text-green-600" />
                           <span className="font-medium text-green-900">Certificates pending</span>
                         </div>
-                        <span className="text-2xl font-bold text-green-600">{dashboardData.pendingCertificates || 0}</span>
+                        <span className="text-2xl font-bold text-green-600">{dashboardData.pendingCertificates}</span>
                       </div>
 
                       <div className="flex justify-between items-center p-3 bg-indigo-50 rounded-lg border border-indigo-100">
@@ -668,20 +794,20 @@ export default function TeacherDashboard() {
                           <Users className="h-5 w-5 text-indigo-600" />
                           <span className="font-medium text-indigo-900">Active students</span>
                         </div>
-                        <span className="text-2xl font-bold text-indigo-600">{dashboardData.totalStudents || 0}</span>
+                        <span className="text-2xl font-bold text-indigo-600">{dashboardData.totalStudents}</span>
                       </div>
 
-                      {((dashboardData.pendingReports || 0) > 0 ||
-                        (dashboardData.pendingCertificates || 0) > 0 ||
-                        (dashboardData.pendingNOCRequests || 0) > 0) && (
+                      {(dashboardData.pendingReports > 0 ||
+                        dashboardData.pendingCertificates > 0 ||
+                        dashboardData.pendingNOCRequests > 0) && (
                         <div className="pt-4 border-t border-gray-100">
                           <Alert className="border-orange-200 bg-orange-50">
                             <AlertCircle className="h-4 w-4 text-orange-600" />
                             <AlertDescription className="text-orange-700">
                               You have{" "}
-                              {(dashboardData.pendingReports || 0) +
-                                (dashboardData.pendingCertificates || 0) +
-                                (dashboardData.pendingNOCRequests || 0)}{" "}
+                              {dashboardData.pendingReports +
+                                dashboardData.pendingCertificates +
+                                dashboardData.pendingNOCRequests}{" "}
                               items pending review.
                             </AlertDescription>
                           </Alert>
@@ -710,22 +836,13 @@ export default function TeacherDashboard() {
                       <div className="flex justify-between items-center mb-2">
                         <span className="text-sm text-gray-600 font-medium">Reports reviewed</span>
                         <span className="font-bold text-blue-600">
-                          {
-                            safeRecentReports.filter(
-                              (r) => r.status === "reviewed" || r.status === "approved",
-                            ).length
-                          }
-                          /{safeRecentReports.length}
+                          {dashboardData.approvedReports}/{dashboardData.totalReports}
                         </span>
                       </div>
                       <Progress
                         value={
-                          safeRecentReports.length > 0
-                            ? (safeRecentReports.filter(
-                                (r) => r.status === "reviewed" || r.status === "approved",
-                              ).length /
-                                safeRecentReports.length) *
-                              100
+                          dashboardData.totalReports > 0
+                            ? (dashboardData.approvedReports / dashboardData.totalReports) * 100
                             : 0
                         }
                         className="h-3"
@@ -733,8 +850,8 @@ export default function TeacherDashboard() {
                     </div>
                     <div>
                       <div className="flex justify-between items-center mb-2">
-                        <span className="text-sm text-gray-600 font-medium">Avg. response time</span>
-                        <span className="font-bold text-green-600">24h</span>
+                        <span className="text-sm text-gray-600 font-medium">This week</span>
+                        <span className="font-bold text-green-600">{dashboardData.reportsThisWeek}</span>
                       </div>
                     </div>
                   </div>
@@ -754,22 +871,20 @@ export default function TeacherDashboard() {
                   <div className="space-y-2">
                     <div className="flex justify-between items-center">
                       <span className="text-sm text-gray-600">Active submissions</span>
-                      <span className="font-semibold text-green-600">{safeRecentReports.length}</span>
+                      <span className="font-semibold text-green-600">{dashboardData.totalReports}</span>
                     </div>
                     <div className="flex justify-between items-center">
                       <span className="text-sm text-gray-600">Completion rate</span>
                       <span className="font-semibold text-blue-600">
-                        {(dashboardData.totalStudents || 0) > 0
-                          ? Math.round((safeRecentReports.length / (dashboardData.totalStudents || 1)) * 100)
+                        {dashboardData.totalStudents > 0
+                          ? Math.round((dashboardData.approvedReports / dashboardData.totalStudents) * 100)
                           : 0}
                         %
                       </span>
                     </div>
                     <div className="flex justify-between items-center">
                       <span className="text-sm text-gray-600">Certificates issued</span>
-                      <span className="font-semibold text-purple-600">
-                        {safeRecentCertificates.filter((c) => c.status === "approved").length}
-                      </span>
+                      <span className="font-semibold text-purple-600">{dashboardData.approvedCertificates}</span>
                     </div>
                   </div>
                 </CardContent>
@@ -788,18 +903,18 @@ export default function TeacherDashboard() {
                   <div className="space-y-2">
                     <div className="flex justify-between items-center">
                       <span className="text-sm text-gray-600">Students mentored</span>
-                      <span className="font-semibold text-blue-600">{dashboardData.totalStudents || 0}</span>
+                      <span className="font-semibold text-blue-600">{dashboardData.totalStudents}</span>
                     </div>
                     <div className="flex justify-between items-center">
-                      <span className="text-sm text-gray-600">Reports this month</span>
-                      <span className="font-semibold text-green-600">{safeRecentReports.length}</span>
+                      <span className="text-sm text-gray-600">Reports this week</span>
+                      <span className="font-semibold text-green-600">{dashboardData.reportsThisWeek}</span>
                     </div>
                     <div className="flex justify-between items-center">
                       <span className="text-sm text-gray-600">Pending reviews</span>
                       <span className="font-semibold text-orange-600">
-                        {(dashboardData.pendingReports || 0) +
-                          (dashboardData.pendingCertificates || 0) +
-                          (dashboardData.pendingNOCRequests || 0)}
+                        {dashboardData.pendingReports +
+                          dashboardData.pendingCertificates +
+                          dashboardData.pendingNOCRequests}
                       </span>
                     </div>
                   </div>

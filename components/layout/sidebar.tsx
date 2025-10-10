@@ -62,10 +62,9 @@ const getNavigationItems = (role: string): NavigationItem[] => {
         { name: "NOC Academic Approval", href: "/dashboard/teacher/noc", icon: FileCheck, badge: "5 Pending" },
         { name: "Report Reviews", href: "/dashboard/teacher/reports", icon: FileText, badge: "8 Pending" },
         { name: "Certificate Approvals", href: "/dashboard/teacher/certificates", icon: Award, badge: "3 Pending" },
-        { name: "Task Management", href: "/dashboard/teacher/tasks", icon: Target },
         { name: "Notifications", href: "/dashboard/teacher/notifications", icon: Bell, badge: "12" },
-        { name: "Analytics", href: "/dashboard/teacher/analytics", icon: BarChart3 },
-        { name: "Meetings", href: "/dashboard/teacher/meetings", icon: Calendar },
+       
+       
       ]
     case "tp-officer":
       return [
@@ -73,7 +72,7 @@ const getNavigationItems = (role: string): NavigationItem[] => {
         { name: "NOC Management", href: "/dashboard/tp-officer/noc", icon: FileCheck, badge: "15 Pending" },
         { name: "Company Verification", href: "/dashboard/tp-officer/companies", icon: Building },
         { name: "Opportunities", href: "/dashboard/tp-officer/opportunities", icon: Briefcase },
-        { name: "Analytics", href: "/dashboard/tp-officer/analytics", icon: BarChart3 },
+        // { name: "Analytics", href: "/dashboard/tp-officer/analytics", icon: BarChart3 },
       ]
     case "admin":
       return [
@@ -81,7 +80,7 @@ const getNavigationItems = (role: string): NavigationItem[] => {
         { name: "User Management", href: "/dashboard/admin/users", icon: UserCog },
         { name: "System Analytics", href: "/dashboard/admin/analytics", icon: BarChart3 },
         { name: "Audit Logs", href: "/dashboard/admin/logs", icon: Database },
-        { name: "System Settings", href: "/dashboard/admin/settings", icon: Settings },
+        // { name: "System Settings", href: "/dashboard/admin/settings", icon: Settings },
       ]
     default:
       return []

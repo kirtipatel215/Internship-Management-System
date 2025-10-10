@@ -27,6 +27,21 @@ const calculateDuration = (startDate: string, endDate: string): string => {
   return `${months} month${months !== 1 ? "s" : ""}`
 }
 
+const calculateWeeksFromDuration = (startDate: string, endDate: string): number => {
+  const start = new Date(startDate)
+  const end = new Date(endDate)
+  const diffTime = Math.abs(end.getTime() - start.getTime())
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+  const weeks = Math.ceil(diffDays / 7)
+  return Math.max(weeks, 1) // At least 1 week
+}
+
+const calculateMonthsFromDuration = (startDate: string, endDate: string): number => {
+  const start = new Date(startDate)
+  const end = new Date(endDate)
+  const months = (end.getFullYear() - start.getFullYear()) * 12 + end.getMonth() - start.getMonth()
+  return Math.max(months, 1) // At least 1 month
+}
 export const clearDataCache = (key?: string) => {
   if (key) {
     dataCache.delete(key)
@@ -979,78 +994,95 @@ export const getStudentDashboardData = async (studentId: string) => {
 // TEACHER DASHBOARD DATA
 // ===================
 
+// FIXED VERSION - Replace your getReportsByTeacher function with this:
+
 export async function getReportsByTeacher(teacherId: string) {
   try {
-    console.log("[v0] Fetching reports for teacher:", teacherId)
+    console.log("[Teacher Reports] Fetching reports for teacher:", teacherId)
 
     if (!supabase) {
-      console.log("[v0] No Supabase client, using mock data")
+      console.log("[Teacher Reports] No Supabase client, using mock data")
       return getMockReports(teacherId)
     }
 
-    // Get student-teacher assignments first
-    const { data: assignments, error: assignmentsError } = await supabase
-      .from("student_teacher_assignments")
-      .select("student_id")
-      .eq("teacher_id", teacherId)
+    // OPTION 1: Try to get reports through student-teacher assignments
+    let reports: any[] = []
+    
+    try {
+      const { data: assignments, error: assignmentsError } = await supabase
+        .from("student_teacher_assignments")
+        .select("student_id")
+        .eq("teacher_id", teacherId)
+        .eq("is_active", true)
 
-    if (assignmentsError) {
-      console.error("[v0] Error fetching assignments:", assignmentsError)
-      return getMockReports(teacherId)
+      if (!assignmentsError && assignments && assignments.length > 0) {
+        const studentIds = assignments.map((a) => a.student_id)
+        console.log(`[Teacher Reports] Found ${studentIds.length} assigned students`)
+
+        // Fetch reports for assigned students
+        const { data: assignedReports, error: reportsError } = await supabase
+          .from("weekly_reports")
+          .select("*")
+          .in("student_id", studentIds)
+          .order("created_at", { ascending: false })
+
+        if (!reportsError && assignedReports) {
+          reports = assignedReports
+          console.log(`[Teacher Reports] Found ${reports.length} reports from assigned students`)
+        }
+      }
+    } catch (assignmentError) {
+      console.warn("[Teacher Reports] Assignment lookup failed, will fetch all reports")
     }
 
-    if (!assignments || assignments.length === 0) {
-      console.log("[v0] No student assignments found for teacher")
-      return []
+    // OPTION 2: If no assignments found, fetch all reports (fallback)
+    if (reports.length === 0) {
+      console.log("[Teacher Reports] No assignments found, fetching all reports")
+      
+      const { data: allReports, error: allReportsError } = await supabase
+        .from("weekly_reports")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(100) // Limit to prevent overload
+
+      if (allReportsError) {
+        console.error("[Teacher Reports] Error fetching all reports:", allReportsError)
+        return getMockReports(teacherId)
+      }
+
+      reports = allReports || []
+      console.log(`[Teacher Reports] Found ${reports.length} total reports (fallback)`)
     }
 
-    const studentIds = assignments.map((a) => a.student_id)
+    // Transform data to ensure all required fields are present
+    const transformedReports = reports.map((report) => ({
+      id: report.id,
+      student_id: report.student_id,
+      student_name: report.student_name || "Unknown Student",
+      student_email: report.student_email || "",
+      week_number: report.week_number,
+      title: report.title,
+      description: report.description || "",
+      achievements: report.achievements || [],
+      challenges: report.challenges,
+      next_week_plan: report.next_week_plan,
+      status: report.status,
+      file_name: report.file_name,
+      file_url: report.file_url,
+      file_size: report.file_size,
+      comments: report.comments,
+      grade: report.grade,
+      feedback: report.feedback,
+      submitted_date: report.submitted_date || report.created_at,
+      reviewed_date: report.reviewed_date,
+      reviewed_by: report.reviewed_by,
+      created_at: report.created_at,
+    }))
 
-    // Fetch reports for assigned students
-    const { data: reports, error: reportsError } = await supabase
-      .from("weekly_reports")
-      .select(`
-        *,
-        users!weekly_reports_student_id_fkey(name, email)
-      `)
-      .in("student_id", studentIds)
-      .order("created_at", { ascending: false })
-
-    if (reportsError) {
-      console.error("[v0] Error fetching reports:", reportsError)
-      return getMockReports(teacherId)
-    }
-
-    // Transform data to match expected format
-    const transformedReports =
-      reports?.map((report) => ({
-        id: report.id,
-        student_id: report.student_id,
-        student_name: report.users?.name || "Unknown Student",
-        student_email: report.users?.email || "",
-        week_number: report.week_number,
-        title: report.title,
-        description: report.description,
-        achievements: report.achievements || [],
-        challenges: report.challenges,
-        next_week_plan: report.next_week_plan,
-        status: report.status,
-        file_name: report.file_name,
-        file_url: report.file_url,
-        file_size: report.file_size,
-        comments: report.comments,
-        grade: report.grade,
-        feedback: report.feedback,
-        submitted_date: report.submitted_date,
-        reviewed_date: report.reviewed_date,
-        reviewed_by: report.reviewed_by,
-        created_at: report.created_at,
-      })) || []
-
-    console.log(`[v0] Successfully fetched ${transformedReports.length} reports`)
+    console.log(`[Teacher Reports] ✅ Successfully processed ${transformedReports.length} reports`)
     return transformedReports
   } catch (error) {
-    console.error("[v0] Error in getReportsByTeacher:", error)
+    console.error("[Teacher Reports] ❌ Error in getReportsByTeacher:", error)
     return getMockReports(teacherId)
   }
 }
@@ -1091,6 +1123,8 @@ export async function getReportsStatsByTeacher(teacherId: string) {
   }
 }
 
+// FIXED VERSION - Replace your updateReportStatusEnhanced function with this:
+
 export async function updateReportStatusEnhanced(
   reportId: number,
   status: string,
@@ -1099,116 +1133,410 @@ export async function updateReportStatusEnhanced(
   reviewedBy?: string,
 ) {
   try {
-    console.log("[v0] Updating report status:", { reportId, status, comments, grade })
+    console.log("[Report Update] Starting update:", { 
+      reportId, 
+      status, 
+      comments: comments?.substring(0, 50), 
+      grade,
+      reviewedBy 
+    })
 
     if (!supabase) {
-      console.log("[v0] No Supabase client, simulating update")
-      return { success: true }
+      console.log("[Report Update] No Supabase client, simulating update")
+      return { success: true, message: "Mock update successful" }
     }
 
+    // Validate inputs
+    if (!reportId) {
+      return { success: false, error: "Report ID is required" }
+    }
+
+    if (!status) {
+      return { success: false, error: "Status is required" }
+    }
+
+    // Build update data object
     const updateData: any = {
-      status,
+      status: status,
       reviewed_date: new Date().toISOString(),
-      reviewed_by: reviewedBy,
+      updated_at: new Date().toISOString(),
     }
 
-    if (comments) updateData.comments = comments
-    if (grade) updateData.grade = grade
-
-    const { data, error } = await supabase.from("weekly_reports").update(updateData).eq("id", reportId).select()
-
-    if (error) {
-      console.error("[v0] Error updating report:", error)
-      return { success: false, error: error.message }
+    // Only add optional fields if they have values
+    if (reviewedBy) {
+      updateData.reviewed_by = reviewedBy
+    }
+    
+    if (comments && comments.trim() !== "") {
+      updateData.comments = comments.trim()
+    }
+    
+    if (grade && grade.trim() !== "") {
+      updateData.grade = grade.trim()
     }
 
-    console.log("[v0] Report updated successfully:", data)
-    return { success: true, data }
+    console.log("[Report Update] Update data prepared:", updateData)
+
+    // Perform the update WITHOUT .select() to avoid RLS issues
+    const { error: updateError } = await supabase
+      .from("weekly_reports")
+      .update(updateData)
+      .eq("id", reportId)
+
+    if (updateError) {
+      console.error("[Report Update] ❌ Database error:", updateError)
+      return { 
+        success: false, 
+        error: `Database error: ${updateError.message}`,
+        details: updateError 
+      }
+    }
+
+    // Verify the update by fetching the record separately
+    const { data: verifyData, error: verifyError } = await supabase
+      .from("weekly_reports")
+      .select("*")
+      .eq("id", reportId)
+      .single()
+
+    if (verifyError) {
+      console.warn("[Report Update] ⚠️ Update succeeded but verification failed:", verifyError)
+      // Still return success since the update worked
+      return { 
+        success: true,
+        message: `Report ${status} successfully (verification skipped)`,
+        data: null
+      }
+    }
+
+    console.log("[Report Update] ✅ Report updated and verified:", verifyData)
+
+    // Clear caches to ensure fresh data on next fetch
+    clearDataCache("teacher-dashboard")
+    clearDataCache("teacher-reports")
+    if (verifyData?.student_id) {
+      clearDataCache(`reports-${verifyData.student_id}`)
+    }
+
+    return { 
+      success: true, 
+      data: verifyData,
+      message: `Report ${status} successfully`
+    }
+
   } catch (error: any) {
-    console.error("[v0] Error in updateReportStatusEnhanced:", error)
-    return { success: false, error: error.message }
+    console.error("[Report Update] ❌ Unexpected error:", error)
+    return { 
+      success: false, 
+      error: error.message || "Unexpected error updating report",
+      details: error 
+    }
   }
 }
 
+// Add this COMPLETE REPLACEMENT for getTeacherDashboardData in your data.ts file
+// This ensures real-time accurate data from the database
+
 export async function getTeacherDashboardData(teacherId: string) {
   try {
-    console.log("[v0] Fetching teacher dashboard data for:", teacherId)
+    console.log("[Teacher Dashboard] Fetching data for teacher:", teacherId)
 
     if (!supabase) {
-      console.log("[v0] No Supabase client, using mock data")
+      console.log("[Teacher Dashboard] No Supabase, using mock data")
       return getMockTeacherDashboardData(teacherId)
     }
 
-    // Get reports stats
-    const reportsStats = await getReportsStatsByTeacher(teacherId)
+    // ======================
+    // 1. GET ASSIGNED STUDENTS
+    // ======================
+    let studentIds: string[] = []
+    let studentsData: any[] = []
 
-    // Get NOC requests for teacher approval
-    const { data: nocRequests, error: nocError } = await supabase
-      .from("noc_requests")
-      .select(`
-        *,
-        users!noc_requests_student_id_fkey(name, email)
-      `)
-      .eq("status", "pending_teacher_approval")
-      .order("created_at", { ascending: false })
+    try {
+      // Try to get students through assignments table
+      const { data: assignments, error: assignError } = await supabase
+        .from("student_teacher_assignments")
+        .select(`
+          student_id,
+          users!student_teacher_assignments_student_id_fkey(
+            id,
+            name,
+            email,
+            roll_number,
+            department
+          )
+        `)
+        .eq("teacher_id", teacherId)
+        .eq("is_active", true)
 
-    if (nocError) {
-      console.error("[v0] Error fetching NOC requests:", nocError)
+      if (!assignError && assignments && assignments.length > 0) {
+        studentIds = assignments.map(a => a.student_id)
+        studentsData = assignments
+          .filter(a => a.users)
+          .map(a => ({
+            id: a.users.id,
+            name: a.users.name,
+            email: a.users.email,
+            roll_number: a.users.roll_number,
+            department: a.users.department
+          }))
+        console.log(`[Teacher Dashboard] Found ${studentIds.length} assigned students`)
+      } else {
+        // Fallback: Get all students if no assignments
+        console.log("[Teacher Dashboard] No assignments found, fetching all students")
+        const { data: allStudents, error: studentsError } = await supabase
+          .from("users")
+          .select("id, name, email, roll_number, department")
+          .eq("role", "student")
+          .eq("is_active", true)
+          .limit(50)
+
+        if (!studentsError && allStudents) {
+          studentIds = allStudents.map(s => s.id)
+          studentsData = allStudents
+          console.log(`[Teacher Dashboard] Found ${studentIds.length} total students (fallback)`)
+        }
+      }
+    } catch (error) {
+      console.error("[Teacher Dashboard] Error fetching students:", error)
     }
 
-    // Get certificates for approval
-    const { data: certificates, error: certError } = await supabase
-      .from("certificates")
-      .select(`
-        *,
-        users!certificates_student_id_fkey(name, email)
-      `)
-      .eq("status", "pending")
-      .order("created_at", { ascending: false })
+    // ======================
+    // 2. GET WEEKLY REPORTS
+    // ======================
+    let allReports: any[] = []
+    let pendingReportsCount = 0
+    let recentReports: any[] = []
 
-    if (certError) {
-      console.error("[v0] Error fetching certificates:", certError)
+    if (studentIds.length > 0) {
+      try {
+        const { data: reports, error: reportsError } = await supabase
+          .from("weekly_reports")
+          .select(`
+            id,
+            student_id,
+            student_name,
+            student_email,
+            week_number,
+            title,
+            description,
+            status,
+            submitted_date,
+            created_at
+          `)
+          .in("student_id", studentIds)
+          .order("submitted_date", { ascending: false })
+
+        if (!reportsError && reports) {
+          allReports = reports
+          pendingReportsCount = reports.filter(r => r.status === "pending").length
+          recentReports = reports.slice(0, 10)
+          console.log(`[Teacher Dashboard] Found ${reports.length} reports, ${pendingReportsCount} pending`)
+        }
+      } catch (error) {
+        console.error("[Teacher Dashboard] Error fetching reports:", error)
+      }
     }
 
-    // Get assigned students count
-    const { data: assignments, error: assignError } = await supabase
-      .from("student_teacher_assignments")
-      .select("student_id, users!student_teacher_assignments_student_id_fkey(email)")
-      .eq("teacher_id", teacherId)
+    // ======================
+    // 3. GET CERTIFICATES
+    // ======================
+    let allCertificates: any[] = []
+    let pendingCertificatesCount = 0
+    let recentCertificates: any[] = []
 
-    if (assignError) {
-      console.error("[v0] Error fetching assignments:", assignError)
+    if (studentIds.length > 0) {
+      try {
+        const { data: certificates, error: certError } = await supabase
+          .from("certificates")
+          .select(`
+            id,
+            student_id,
+            student_name,
+            student_email,
+            title,
+            certificate_type,
+            status,
+            upload_date,
+            created_at
+          `)
+          .in("student_id", studentIds)
+          .order("created_at", { ascending: false })
+
+        if (!certError && certificates) {
+          allCertificates = certificates
+          pendingCertificatesCount = certificates.filter(c => c.status === "pending").length
+          recentCertificates = certificates.slice(0, 10)
+          console.log(`[Teacher Dashboard] Found ${certificates.length} certificates, ${pendingCertificatesCount} pending`)
+        }
+      } catch (error) {
+        console.error("[Teacher Dashboard] Error fetching certificates:", error)
+      }
     }
 
-    const charusatStudents = assignments?.filter((a) => a.users?.email?.endsWith("@charusat.edu.in")).length || 0
+    // ======================
+    // 4. GET NOC REQUESTS (Teacher Approval Stage)
+    // ======================
+    let pendingNOCCount = 0
+    let allNOCs: any[] = []
 
+    try {
+      const { data: nocs, error: nocError } = await supabase
+        .from("noc_requests")
+        .select(`
+          id,
+          student_id,
+          student_name,
+          student_email,
+          company_name,
+          position,
+          status,
+          submitted_date,
+          tp_approved_date
+        `)
+        .eq("status", "pending_teacher_approval")
+        .order("tp_approved_date", { ascending: false })
+
+      if (!nocError && nocs) {
+        allNOCs = nocs
+        pendingNOCCount = nocs.length
+        console.log(`[Teacher Dashboard] Found ${pendingNOCCount} NOCs pending teacher approval`)
+      }
+    } catch (error) {
+      console.error("[Teacher Dashboard] Error fetching NOCs:", error)
+    }
+
+    // ======================
+    // 5. CONSTRUCT DASHBOARD DATA
+    // ======================
     const dashboardData = {
-      reports: reportsStats,
-      nocRequests: {
-        total: nocRequests?.length || 0,
-        pendingTeacherApproval: nocRequests?.length || 0,
-        approved: 0,
-        recent: nocRequests?.slice(0, 5) || [],
-      },
-      certificates: {
-        total: certificates?.length || 0,
-        pending: certificates?.length || 0,
-        approved: 0,
-        recent: certificates?.slice(0, 5) || [],
-      },
-      students: {
-        total: assignments?.length || 0,
-        active: assignments?.length || 0,
-        charusatStudents,
-      },
+      // Core stats
+      totalStudents: studentsData.length,
+      pendingReports: pendingReportsCount,
+      pendingCertificates: pendingCertificatesCount,
+      pendingNOCRequests: pendingNOCCount,
+
+      // Detailed arrays for UI
+      students: studentsData,
+      recentReports: recentReports,
+      recentCertificates: recentCertificates,
+      
+      // Additional stats
+      totalReports: allReports.length,
+      approvedReports: allReports.filter(r => r.status === "approved").length,
+      totalCertificates: allCertificates.length,
+      approvedCertificates: allCertificates.filter(c => c.status === "approved").length,
+
+      // For analytics
+      reportsThisWeek: allReports.filter(r => {
+        const weekAgo = new Date()
+        weekAgo.setDate(weekAgo.getDate() - 7)
+        return new Date(r.submitted_date) > weekAgo
+      }).length,
+
+      certificatesThisMonth: allCertificates.filter(c => {
+        const monthAgo = new Date()
+        monthAgo.setMonth(monthAgo.getMonth() - 1)
+        return new Date(c.created_at) > monthAgo
+      }).length,
     }
 
-    console.log("[v0] Teacher dashboard data loaded successfully")
+    console.log("[Teacher Dashboard] ✅ Dashboard data compiled successfully:", {
+      students: dashboardData.totalStudents,
+      reports: dashboardData.totalReports,
+      certificates: dashboardData.totalCertificates,
+      pendingNOCs: dashboardData.pendingNOCRequests
+    })
+
     return dashboardData
+
   } catch (error) {
-    console.error("[v0] Error in getTeacherDashboardData:", error)
+    console.error("[Teacher Dashboard] ❌ Critical error:", error)
     return getMockTeacherDashboardData(teacherId)
   }
+}
+
+export const clearTeacherDashboardCache = (teacherId?: string) => {
+  if (teacherId) {
+    clearDataCache(`teacher-dashboard-${teacherId}`)
+  }
+  clearDataCache("teacher-dashboard")
+  clearDataCache("teacher-reports")
+  clearDataCache("teacher-certificates")
+  clearDataCache("teacher-noc")
+  console.log("✅ Teacher dashboard caches cleared")
+}
+
+// ======================
+// REAL-TIME UPDATE FUNCTIONS
+// ======================
+
+// Call this after reviewing a report
+export const afterReportReview = async (teacherId: string) => {
+  clearTeacherDashboardCache(teacherId)
+  return await getTeacherDashboardData(teacherId)
+}
+
+// Call this after reviewing a certificate
+export const afterCertificateReview = async (teacherId: string) => {
+  clearTeacherDashboardCache(teacherId)
+  return await getTeacherDashboardData(teacherId)
+}
+
+// Call this after NOC approval/rejection
+export const afterNOCReview = async (teacherId: string) => {
+  clearTeacherDashboardCache(teacherId)
+  return await getTeacherDashboardData(teacherId)
+}
+
+// ======================
+// DEBUG FUNCTION
+// ======================
+export const debugTeacherDashboard = async (teacherId: string) => {
+  if (!supabase) {
+    console.log("No Supabase connection")
+    return
+  }
+
+  console.log("=== TEACHER DASHBOARD DEBUG ===")
+  console.log("Teacher ID:", teacherId)
+
+  // Check assignments
+  const { data: assignments } = await supabase
+    .from("student_teacher_assignments")
+    .select("*")
+    .eq("teacher_id", teacherId)
+  console.log("Assignments:", assignments?.length || 0)
+
+  // Check all students
+  const { data: students } = await supabase
+    .from("users")
+    .select("id, name, role")
+    .eq("role", "student")
+  console.log("Total students in system:", students?.length || 0)
+
+  // Check reports
+  const { data: reports } = await supabase
+    .from("weekly_reports")
+    .select("id, status")
+  console.log("Total reports:", reports?.length || 0)
+  console.log("Pending reports:", reports?.filter(r => r.status === "pending").length || 0)
+
+  // Check certificates
+  const { data: certs } = await supabase
+    .from("certificates")
+    .select("id, status")
+  console.log("Total certificates:", certs?.length || 0)
+  console.log("Pending certificates:", certs?.filter(c => c.status === "pending").length || 0)
+
+  // Check NOCs
+  const { data: nocs } = await supabase
+    .from("noc_requests")
+    .select("id, status")
+    .eq("status", "pending_teacher_approval")
+  console.log("NOCs pending teacher approval:", nocs?.length || 0)
+
+  console.log("==============================")
 }
 
 // ===================
@@ -1217,7 +1545,7 @@ export async function getTeacherDashboardData(teacherId: string) {
 
 export const getStudentsByTeacher = async (teacherId: string) => {
   try {
-    console.log("👨🏫 Fetching students for teacher:", teacherId)
+    console.log("👨‍🏫 Fetching students for teacher:", teacherId)
     
     if (!supabase) {
       console.log("⚠️ Supabase not available, using mock data")
@@ -1296,8 +1624,17 @@ export const getStudentsByTeacher = async (teacherId: string) => {
     const enrichedStudents = students.map((student) => {
       const currentInternship = nocRequests.find((noc) => noc.student_id === student.id)
       const studentReports = reports.filter((r) => r.student_id === student.id)
+      
+      // Calculate total expected reports based on internship duration
+      let totalReports = 0
+      if (currentInternship?.start_date && currentInternship?.end_date) {
+        totalReports = calculateWeeksFromDuration(currentInternship.start_date, currentInternship.end_date)
+      } else {
+        // If no active internship, use actual report count or default to 0
+        totalReports = studentReports.length || 0
+      }
+      
       const submittedReports = studentReports.filter((r) => r.status !== "pending").length
-      const totalReports = Math.max(studentReports.length, 10)
       const progress = totalReports > 0 ? Math.round((submittedReports / totalReports) * 100) : 0
       const studentCertificates = certificates.filter((c) => c.student_id === student.id)
 
