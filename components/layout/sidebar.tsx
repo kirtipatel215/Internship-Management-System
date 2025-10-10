@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-
+import { useState, useEffect, useMemo, useCallback } from "react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -29,7 +29,20 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { logout } from "@/lib/auth"
 import { useToast } from "@/hooks/use-toast"
-import { useMemo, useCallback } from "react"
+
+// Import data functions for dynamic counts
+import {
+  getAllOpportunities,
+  getNOCRequestsByStudent,
+  getReportsByStudent,
+  getCertificatesByStudent,
+  generateTeacherNotifications,
+  getReportsByTeacher,
+  getCertificatesByTeacher,
+  getTeacherNOCRequests,
+  getNOCRequestsForTPOfficer,
+  getAllCompanies,
+} from "@/lib/data"
 
 interface SidebarProps {
   user: any
@@ -41,58 +54,224 @@ interface NavigationItem {
   name: string
   href: string
   icon: React.ComponentType<{ className?: string }>
-  badge?: string
+  badge?: string | number
+  badgeVariant?: "default" | "secondary" | "destructive"
 }
 
-const getNavigationItems = (role: string): NavigationItem[] => {
-  switch (role) {
-    case "student":
-      return [
-        { name: "Dashboard", href: "/dashboard/student", icon: Home },
-        { name: "Opportunities", href: "/dashboard/student/opportunities", icon: Briefcase, badge: "5 New" },
-        { name: "NOC Requests", href: "/dashboard/student/noc", icon: FileText },
-        { name: "Weekly Reports", href: "/dashboard/student/reports", icon: BookOpen, badge: "2 Due" },
-        { name: "Certificates", href: "/dashboard/student/certificates", icon: Award },
-        { name: "Notifications", href: "/dashboard/student/notifications", icon: Bell, badge: "3" },
-      ]
-    case "teacher":
-      return [
-        { name: "Dashboard", href: "/dashboard/teacher", icon: Home },
-        { name: "My Students", href: "/dashboard/teacher/students", icon: Users },
-        { name: "NOC Academic Approval", href: "/dashboard/teacher/noc", icon: FileCheck, badge: "5 Pending" },
-        { name: "Report Reviews", href: "/dashboard/teacher/reports", icon: FileText, badge: "8 Pending" },
-        { name: "Certificate Approvals", href: "/dashboard/teacher/certificates", icon: Award, badge: "3 Pending" },
-        { name: "Notifications", href: "/dashboard/teacher/notifications", icon: Bell, badge: "12" },
-       
-       
-      ]
-    case "tp-officer":
-      return [
-        { name: "Dashboard", href: "/dashboard/tp-officer", icon: Home },
-        { name: "NOC Management", href: "/dashboard/tp-officer/noc", icon: FileCheck, badge: "15 Pending" },
-        { name: "Company Verification", href: "/dashboard/tp-officer/companies", icon: Building },
-        { name: "Opportunities", href: "/dashboard/tp-officer/opportunities", icon: Briefcase },
-        // { name: "Analytics", href: "/dashboard/tp-officer/analytics", icon: BarChart3 },
-      ]
-    case "admin":
-      return [
-        { name: "Dashboard", href: "/dashboard/admin", icon: Home },
-        { name: "User Management", href: "/dashboard/admin/users", icon: UserCog },
-        { name: "System Analytics", href: "/dashboard/admin/analytics", icon: BarChart3 },
-        { name: "Audit Logs", href: "/dashboard/admin/logs", icon: Database },
-        // { name: "System Settings", href: "/dashboard/admin/settings", icon: Settings },
-      ]
-    default:
-      return []
-  }
+interface DynamicCounts {
+  opportunities?: number
+  nocRequests?: number
+  reports?: number
+  certificates?: number
+  notifications?: number
+  students?: number
+  pendingNOCs?: number
+  pendingReports?: number
+  pendingCertificates?: number
+  companies?: number
 }
 
 function SidebarContent({ user, onItemClick }: { user: any; onItemClick?: () => void }) {
   const pathname = usePathname()
   const { toast } = useToast()
+  const [counts, setCounts] = useState<DynamicCounts>({})
+  const [loading, setLoading] = useState(true)
 
-  // Memoize navigation items to prevent recreation
-  const navigationItems = useMemo(() => getNavigationItems(user?.role || ""), [user?.role])
+  // Fetch dynamic counts based on user role
+  useEffect(() => {
+    const fetchCounts = async () => {
+      if (!user?.id || !user?.role) {
+        setLoading(false)
+        return
+      }
+
+      try {
+        setLoading(true)
+        let newCounts: DynamicCounts = {}
+
+        switch (user.role) {
+          case "student":
+            // Fetch student-specific counts
+            const [opportunities, nocRequests, reports, certificates, notifications] = await Promise.all([
+              getAllOpportunities().catch(() => []),
+              getNOCRequestsByStudent(user.id).catch(() => []),
+              getReportsByStudent(user.id).catch(() => []),
+              getCertificatesByStudent(user.id).catch(() => []),
+              // You can add a getNotificationsByStudent function if you have one
+              Promise.resolve([]),
+            ])
+
+            newCounts = {
+              opportunities: opportunities.filter((o: any) => o.status === "active").length,
+              nocRequests: nocRequests.filter((n: any) => n.status === "pending").length,
+              reports: reports.filter((r: any) => r.status === "pending").length,
+              certificates: certificates.filter((c: any) => c.status === "pending").length,
+              notifications: 0, // Will be populated when notification system is ready
+            }
+            break
+
+          case "teacher":
+            // Fetch teacher-specific counts
+            const [teacherReports, teacherCerts, teacherNOCs, teacherNotifications] = await Promise.all([
+              getReportsByTeacher(user.id).catch(() => []),
+              getCertificatesByTeacher(user.id).catch(() => []),
+              getTeacherNOCRequests(user.id).catch(() => []),
+              generateTeacherNotifications(user.id).catch(() => []),
+            ])
+
+            newCounts = {
+              pendingReports: teacherReports.filter((r: any) => r.status === "pending").length,
+              pendingCertificates: teacherCerts.filter((c: any) => c.status === "pending").length,
+              pendingNOCs: teacherNOCs.filter((n: any) => n.status === "pending_teacher_approval").length,
+              notifications: teacherNotifications.filter((n: any) => !n.isRead).length,
+            }
+            break
+
+          case "tp_officer":
+          case "tp-officer":
+            // Fetch TP Officer-specific counts
+            const [tpNOCs, tpCompanies] = await Promise.all([
+              getNOCRequestsForTPOfficer().catch(() => []),
+              getAllCompanies().catch(() => []),
+            ])
+
+            newCounts = {
+              pendingNOCs: tpNOCs.filter((n: any) => n.status === "pending").length,
+              companies: tpCompanies.filter((c: any) => !c.verified).length,
+            }
+            break
+
+          case "admin":
+            // Admin counts can be added here
+            newCounts = {}
+            break
+        }
+
+        setCounts(newCounts)
+      } catch (error) {
+        console.error("Error fetching sidebar counts:", error)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchCounts()
+
+    // Refresh counts every 30 seconds
+    const interval = setInterval(fetchCounts, 30000)
+    return () => clearInterval(interval)
+  }, [user?.id, user?.role])
+
+  // Get navigation items with dynamic counts
+  const getNavigationItems = useCallback(
+    (role: string): NavigationItem[] => {
+      switch (role) {
+        case "student":
+          return [
+            { name: "Dashboard", href: "/dashboard/student", icon: Home },
+            {
+              name: "Opportunities",
+              href: "/dashboard/student/opportunities",
+              icon: Briefcase,
+              badge: counts.opportunities || undefined,
+              badgeVariant: "secondary",
+            },
+            {
+              name: "NOC Requests",
+              href: "/dashboard/student/noc",
+              icon: FileText,
+              badge: counts.nocRequests || undefined,
+              badgeVariant: counts.nocRequests ? "destructive" : undefined,
+            },
+            {
+              name: "Weekly Reports",
+              href: "/dashboard/student/reports",
+              icon: BookOpen,
+              badge: counts.reports || undefined,
+              badgeVariant: counts.reports ? "destructive" : undefined,
+            },
+            {
+              name: "Certificates",
+              href: "/dashboard/student/certificates",
+              icon: Award,
+              badge: counts.certificates || undefined,
+            },
+            {
+              name: "Notifications",
+              href: "/dashboard/student/notifications",
+              icon: Bell,
+              badge: counts.notifications || undefined,
+              badgeVariant: "default",
+            },
+          ]
+        case "teacher":
+          return [
+            { name: "Dashboard", href: "/dashboard/teacher", icon: Home },
+            { name: "My Students", href: "/dashboard/teacher/students", icon: Users },
+            {
+              name: "NOC Academic Approval",
+              href: "/dashboard/teacher/noc",
+              icon: FileCheck,
+              badge: counts.pendingNOCs || undefined,
+              badgeVariant: counts.pendingNOCs ? "destructive" : undefined,
+            },
+            {
+              name: "Report Reviews",
+              href: "/dashboard/teacher/reports",
+              icon: FileText,
+              badge: counts.pendingReports || undefined,
+              badgeVariant: counts.pendingReports ? "destructive" : undefined,
+            },
+            {
+              name: "Certificate Approvals",
+              href: "/dashboard/teacher/certificates",
+              icon: Award,
+              badge: counts.pendingCertificates || undefined,
+              badgeVariant: counts.pendingCertificates ? "destructive" : undefined,
+            },
+            {
+              name: "Notifications",
+              href: "/dashboard/teacher/notifications",
+              icon: Bell,
+              badge: counts.notifications || undefined,
+              badgeVariant: "default",
+            },
+          ]
+        case "tp-officer":
+        case "tp_officer":
+          return [
+            { name: "Dashboard", href: "/dashboard/tp-officer", icon: Home },
+            {
+              name: "NOC Management",
+              href: "/dashboard/tp-officer/noc",
+              icon: FileCheck,
+              badge: counts.pendingNOCs || undefined,
+              badgeVariant: counts.pendingNOCs ? "destructive" : undefined,
+            },
+            {
+              name: "Company Verification",
+              href: "/dashboard/tp-officer/companies",
+              icon: Building,
+              badge: counts.companies || undefined,
+              badgeVariant: counts.companies ? "destructive" : undefined,
+            },
+            { name: "Opportunities", href: "/dashboard/tp-officer/opportunities", icon: Briefcase },
+          ]
+        case "admin":
+          return [
+            { name: "Dashboard", href: "/dashboard/admin", icon: Home },
+            { name: "User Management", href: "/dashboard/admin/users", icon: UserCog },
+            { name: "System Analytics", href: "/dashboard/admin/analytics", icon: BarChart3 },
+            { name: "Audit Logs", href: "/dashboard/admin/logs", icon: Database },
+          ]
+        default:
+          return []
+      }
+    },
+    [counts],
+  )
+
+  const navigationItems = useMemo(() => getNavigationItems(user?.role || ""), [user?.role, getNavigationItems])
 
   const handleLogout = useCallback(() => {
     try {
@@ -122,7 +301,7 @@ function SidebarContent({ user, onItemClick }: { user: any; onItemClick?: () => 
 
   const userRoleFormatted = useMemo(() => {
     if (!user?.role) return "User"
-    return user.role.replace("-", " ")
+    return user.role.replace("-", " ").replace("_", " ")
   }, [user?.role])
 
   return (
@@ -160,15 +339,22 @@ function SidebarContent({ user, onItemClick }: { user: any; onItemClick?: () => 
                 >
                   <IconComponent className={cn("mr-3 h-4 w-4", isActive && "text-blue-600")} />
                   <span className="flex-1 text-left text-sm font-medium">{item.name}</span>
-                  {item.badge && (
+                  {item.badge !== undefined && (
                     <Badge
-                      variant={isActive ? "default" : "secondary"}
+                      variant={
+                        item.badgeVariant === "destructive"
+                          ? "destructive"
+                          : isActive
+                            ? "default"
+                            : "secondary"
+                      }
                       className={cn(
                         "ml-auto text-xs",
-                        isActive ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-600",
+                        !item.badgeVariant &&
+                          (isActive ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-600"),
                       )}
                     >
-                      {item.badge}
+                      {loading ? "..." : item.badge}
                     </Badge>
                   )}
                 </Button>

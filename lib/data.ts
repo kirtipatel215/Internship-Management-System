@@ -4098,3 +4098,401 @@ const getMockAllUsers = () => [
     updated_at: "2024-03-25T12:00:00Z",
   },
 ]
+
+// Add these functions to your data.ts file
+
+// ===================
+// NOTIFICATIONS MANAGEMENT - REAL-TIME
+// ===================
+
+export const getTeacherNotifications = async (teacherId: string) => {
+  try {
+    console.log("[Notifications] Fetching notifications for teacher:", teacherId)
+
+    if (!supabase) {
+      console.log("[Notifications] No Supabase, using mock data")
+      return getMockTeacherNotifications()
+    }
+
+    // Fetch notifications from database
+    const { data, error } = await supabase
+      .from("notifications")
+      .select("*")
+      .eq("user_id", teacherId)
+      .order("created_at", { ascending: false })
+      .limit(100)
+
+    if (error) {
+      console.error("[Notifications] Error fetching notifications:", error)
+      return getMockTeacherNotifications()
+    }
+
+    console.log(`[Notifications] Found ${data?.length || 0} notifications`)
+    return data || []
+  } catch (err) {
+    console.error("[Notifications] Error:", err)
+    return getMockTeacherNotifications()
+  }
+}
+
+export const generateTeacherNotifications = async (teacherId: string) => {
+  try {
+    console.log("[Notifications] Generating notifications for teacher:", teacherId)
+
+    if (!supabase) {
+      return getMockTeacherNotifications()
+    }
+
+    const notifications: any[] = []
+
+    // Get assigned students
+    let studentIds: string[] = []
+    try {
+      const { data: assignments } = await supabase
+        .from("student_teacher_assignments")
+        .select("student_id")
+        .eq("teacher_id", teacherId)
+        .eq("is_active", true)
+
+      if (assignments && assignments.length > 0) {
+        studentIds = assignments.map(a => a.student_id)
+      } else {
+        // Fallback: get all students
+        const { data: students } = await supabase
+          .from("users")
+          .select("id")
+          .eq("role", "student")
+          .eq("is_active", true)
+          .limit(50)
+        
+        if (students) {
+          studentIds = students.map(s => s.id)
+        }
+      }
+    } catch (error) {
+      console.error("[Notifications] Error fetching students:", error)
+    }
+
+    if (studentIds.length === 0) {
+      return []
+    }
+
+    // 1. Pending Reports Notifications
+    const { data: pendingReports } = await supabase
+      .from("weekly_reports")
+      .select("id, student_id, student_name, week_number, title, submitted_date, created_at")
+      .in("student_id", studentIds)
+      .eq("status", "pending")
+      .order("submitted_date", { ascending: false })
+      .limit(20)
+
+    if (pendingReports && pendingReports.length > 0) {
+      for (const report of pendingReports) {
+        notifications.push({
+          id: `report_${report.id}`,
+          type: "report_submitted",
+          title: "New Weekly Report Submitted",
+          message: `${report.student_name} has submitted Week ${report.week_number} report for review`,
+          studentName: report.student_name,
+          studentId: report.student_id,
+          timestamp: report.submitted_date || report.created_at,
+          isRead: false,
+          priority: "medium",
+          actionRequired: true,
+          relatedId: report.id,
+        })
+      }
+    }
+
+    // 2. Pending Certificates Notifications
+    const { data: pendingCertificates } = await supabase
+      .from("certificates")
+      .select("id, student_id, student_name, title, certificate_type, upload_date, created_at")
+      .in("student_id", studentIds)
+      .eq("status", "pending")
+      .order("upload_date", { ascending: false })
+      .limit(20)
+
+    if (pendingCertificates && pendingCertificates.length > 0) {
+      for (const cert of pendingCertificates) {
+        notifications.push({
+          id: `cert_${cert.id}`,
+          type: "certificate_uploaded",
+          title: "Certificate Uploaded",
+          message: `${cert.student_name} has uploaded ${cert.certificate_type} certificate`,
+          studentName: cert.student_name,
+          studentId: cert.student_id,
+          timestamp: cert.upload_date || cert.created_at,
+          isRead: false,
+          priority: "high",
+          actionRequired: true,
+          relatedId: cert.id,
+        })
+      }
+    }
+
+    // 3. Pending NOC Requests (for teacher approval)
+    const { data: pendingNOCs } = await supabase
+      .from("noc_requests")
+      .select("id, student_id, student_name, company_name, position, tp_approved_date, submitted_date")
+      .eq("status", "pending_teacher_approval")
+      .order("tp_approved_date", { ascending: false })
+      .limit(10)
+
+    if (pendingNOCs && pendingNOCs.length > 0) {
+      for (const noc of pendingNOCs) {
+        notifications.push({
+          id: `noc_${noc.id}`,
+          type: "noc_approval_required",
+          title: "NOC Approval Required",
+          message: `${noc.student_name} - ${noc.company_name} (${noc.position}) awaiting your approval`,
+          studentName: noc.student_name,
+          studentId: noc.student_id,
+          timestamp: noc.tp_approved_date || noc.submitted_date,
+          isRead: false,
+          priority: "high",
+          actionRequired: true,
+          relatedId: noc.id,
+        })
+      }
+    }
+
+    // 4. Deadline Reminders for Overdue Reports
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
+    const { data: overdueReports } = await supabase
+      .from("weekly_reports")
+      .select("id, student_name")
+      .in("student_id", studentIds)
+      .eq("status", "pending")
+      .lt("submitted_date", sevenDaysAgo)
+
+    if (overdueReports && overdueReports.length > 0) {
+      notifications.push({
+        id: `deadline_reports_${Date.now()}`,
+        type: "deadline_reminder",
+        title: "Report Review Deadline",
+        message: `${overdueReports.length} reports are pending review for over 7 days`,
+        timestamp: new Date().toISOString(),
+        isRead: false,
+        priority: "high",
+        actionRequired: true,
+        relatedId: null,
+      })
+    }
+
+    // 5. Recently Approved Items (last 24 hours)
+    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+    
+    const { data: recentlyApproved } = await supabase
+      .from("weekly_reports")
+      .select("id, student_id, student_name, week_number, reviewed_date")
+      .in("student_id", studentIds)
+      .eq("status", "approved")
+      .gte("reviewed_date", oneDayAgo)
+      .order("reviewed_date", { ascending: false })
+      .limit(5)
+
+    if (recentlyApproved && recentlyApproved.length > 0) {
+      for (const report of recentlyApproved) {
+        notifications.push({
+          id: `approved_${report.id}`,
+          type: "task_completed",
+          title: "Report Approved",
+          message: `Week ${report.week_number} report for ${report.student_name} was approved`,
+          studentName: report.student_name,
+          studentId: report.student_id,
+          timestamp: report.reviewed_date,
+          isRead: true,
+          priority: "low",
+          actionRequired: false,
+          relatedId: report.id,
+        })
+      }
+    }
+
+    // Sort all notifications by timestamp
+    notifications.sort((a, b) => 
+      new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+    )
+
+    console.log(`[Notifications] Generated ${notifications.length} notifications`)
+    return notifications
+
+  } catch (error) {
+    console.error("[Notifications] Error generating notifications:", error)
+    return getMockTeacherNotifications()
+  }
+}
+
+export const markNotificationAsRead = async (notificationId: string | number, userId: string) => {
+  try {
+    console.log("[Notifications] Marking as read:", notificationId)
+
+    if (!supabase) {
+      return { success: true }
+    }
+
+    // If it's a generated notification (string ID), just return success
+    if (typeof notificationId === "string") {
+      return { success: true }
+    }
+
+    const { error } = await supabase
+      .from("notifications")
+      .update({ 
+        is_read: true,
+        read_at: new Date().toISOString()
+      })
+      .eq("id", notificationId)
+      .eq("user_id", userId)
+
+    if (error) {
+      console.error("[Notifications] Error marking as read:", error)
+      return { success: false, error: error.message }
+    }
+
+    return { success: true }
+  } catch (err: any) {
+    console.error("[Notifications] Error:", err)
+    return { success: false, error: err.message }
+  }
+}
+
+export const markAllNotificationsAsRead = async (userId: string) => {
+  try {
+    console.log("[Notifications] Marking all as read for user:", userId)
+
+    if (!supabase) {
+      return { success: true }
+    }
+
+    const { error } = await supabase
+      .from("notifications")
+      .update({ 
+        is_read: true,
+        read_at: new Date().toISOString()
+      })
+      .eq("user_id", userId)
+      .eq("is_read", false)
+
+    if (error) {
+      console.error("[Notifications] Error marking all as read:", error)
+      return { success: false, error: error.message }
+    }
+
+    return { success: true }
+  } catch (err: any) {
+    console.error("[Notifications] Error:", err)
+    return { success: false, error: err.message }
+  }
+}
+
+export const deleteNotification = async (notificationId: string | number, userId: string) => {
+  try {
+    console.log("[Notifications] Deleting notification:", notificationId)
+
+    if (!supabase) {
+      return { success: true }
+    }
+
+    // If it's a generated notification, just return success
+    if (typeof notificationId === "string") {
+      return { success: true }
+    }
+
+    const { error } = await supabase
+      .from("notifications")
+      .delete()
+      .eq("id", notificationId)
+      .eq("user_id", userId)
+
+    if (error) {
+      console.error("[Notifications] Error deleting:", error)
+      return { success: false, error: error.message }
+    }
+
+    return { success: true }
+  } catch (err: any) {
+    console.error("[Notifications] Error:", err)
+    return { success: false, error: err.message }
+  }
+}
+
+export const createNotification = async (notificationData: {
+  userId: string
+  type: string
+  title: string
+  message: string
+  priority?: string
+  actionRequired?: boolean
+  relatedId?: number | null
+  studentName?: string
+  studentId?: string
+}) => {
+  try {
+    console.log("[Notifications] Creating notification:", notificationData)
+
+    if (!supabase) {
+      return { success: true, data: { id: Date.now(), ...notificationData } }
+    }
+
+    const insertData = {
+      user_id: notificationData.userId,
+      type: notificationData.type,
+      title: notificationData.title,
+      message: notificationData.message,
+      priority: notificationData.priority || "medium",
+      action_required: notificationData.actionRequired || false,
+      related_id: notificationData.relatedId || null,
+      is_read: false,
+      created_at: new Date().toISOString(),
+    }
+
+    const { data, error } = await supabase
+      .from("notifications")
+      .insert(insertData)
+      .select()
+      .single()
+
+    if (error) {
+      console.error("[Notifications] Error creating notification:", error)
+      return { success: false, error: error.message }
+    }
+
+    console.log("[Notifications] Created successfully:", data)
+    return { success: true, data }
+  } catch (err: any) {
+    console.error("[Notifications] Error:", err)
+    return { success: false, error: err.message }
+  }
+}
+
+// Mock data fallback
+const getMockTeacherNotifications = () => [
+  {
+    id: 1,
+    type: "report_submitted",
+    title: "New Weekly Report Submitted",
+    message: "John Doe has submitted Week 9 report for review",
+    studentName: "John Doe",
+    studentId: "student_1",
+    timestamp: new Date(Date.now() - 30 * 60 * 1000).toISOString(),
+    isRead: false,
+    priority: "medium",
+    actionRequired: true,
+    relatedId: 15,
+  },
+  {
+    id: 2,
+    type: "certificate_uploaded",
+    title: "Certificate Uploaded",
+    message: "Jane Smith has uploaded internship completion certificate",
+    studentName: "Jane Smith",
+    studentId: "student_2",
+    timestamp: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+    isRead: false,
+    priority: "high",
+    actionRequired: true,
+    relatedId: 8,
+  },
+]

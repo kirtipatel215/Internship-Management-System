@@ -1,5 +1,6 @@
 "use client"
 
+import { useState, useEffect } from "react"
 import { AuthGuard } from "@/components/auth-guard"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -16,7 +17,6 @@ import {
   Filter,
   Eye,
   Trash2,
-  BookMarkedIcon as MarkAsRead,
   Send,
   User,
   FileText,
@@ -26,82 +26,26 @@ import {
   CheckCircle,
   X,
   Plus,
+  RefreshCw,
+  Loader2,
+  BookMarked,
 } from "lucide-react"
-import { useState, useEffect } from "react"
-import { getCurrentUser } from "@/lib/auth"
 import { toast } from "sonner"
 
-// Mock notifications data
-const mockNotifications = [
-  {
-    id: 1,
-    type: "report_submitted",
-    title: "New Weekly Report Submitted",
-    message: "John Doe has submitted Week 9 report for review",
-    studentName: "John Doe",
-    studentId: 1,
-    timestamp: "2024-01-22T10:30:00Z",
-    isRead: false,
-    priority: "medium",
-    actionRequired: true,
-    relatedId: 15,
-  },
-  {
-    id: 2,
-    type: "certificate_uploaded",
-    title: "Certificate Uploaded",
-    message: "Jane Smith has uploaded internship completion certificate",
-    studentName: "Jane Smith",
-    studentId: 2,
-    timestamp: "2024-01-22T09:15:00Z",
-    isRead: false,
-    priority: "high",
-    actionRequired: true,
-    relatedId: 8,
-  },
-  {
-    id: 3,
-    type: "task_completed",
-    title: "Task Completed",
-    message: "Mike Johnson has completed the Mid-term Presentation task",
-    studentName: "Mike Johnson",
-    studentId: 3,
-    timestamp: "2024-01-21T16:45:00Z",
-    isRead: true,
-    priority: "low",
-    actionRequired: false,
-    relatedId: 5,
-  },
-  {
-    id: 4,
-    type: "deadline_reminder",
-    title: "Report Review Deadline",
-    message: "3 reports are pending review and due for approval by tomorrow",
-    timestamp: "2024-01-21T14:20:00Z",
-    isRead: false,
-    priority: "high",
-    actionRequired: true,
-    relatedId: null,
-  },
-  {
-    id: 5,
-    type: "student_message",
-    title: "Message from Student",
-    message: "Sarah Wilson has sent you a message regarding her internship progress",
-    studentName: "Sarah Wilson",
-    studentId: 4,
-    timestamp: "2024-01-21T11:30:00Z",
-    isRead: true,
-    priority: "medium",
-    actionRequired: false,
-    relatedId: 12,
-  },
-]
+// Import data functions
+import { 
+  getCurrentUser,
+  generateTeacherNotifications, 
+  markNotificationAsRead, 
+  markAllNotificationsAsRead,
+  deleteNotification,
+  sendMessageToStudent 
+} from "@/lib/data"
 
 export default function TeacherNotificationsPage() {
   const [user, setUser] = useState(null)
-  const [notifications, setNotifications] = useState(mockNotifications)
-  const [filteredNotifications, setFilteredNotifications] = useState(mockNotifications)
+  const [notifications, setNotifications] = useState([])
+  const [filteredNotifications, setFilteredNotifications] = useState([])
   const [searchTerm, setSearchTerm] = useState("")
   const [typeFilter, setTypeFilter] = useState("all")
   const [priorityFilter, setPriorityFilter] = useState("all")
@@ -111,19 +55,76 @@ export default function TeacherNotificationsPage() {
   const [showComposeDialog, setShowComposeDialog] = useState(false)
   const [composeMessage, setComposeMessage] = useState("")
   const [composeSubject, setComposeSubject] = useState("")
+  const [selectedStudentId, setSelectedStudentId] = useState("")
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
 
+  // Load user and notifications
+  const loadNotifications = async (showLoader = true) => {
+    try {
+      if (showLoader) {
+        setLoading(true)
+      } else {
+        setRefreshing(true)
+      }
+
+      // Get current user
+      const currentUser = await getCurrentUser()
+      if (!currentUser) {
+        console.error("No user found")
+        toast.error("Please log in to view notifications")
+        setLoading(false)
+        setRefreshing(false)
+        return
+      }
+
+      setUser(currentUser)
+      console.log("📧 Loading notifications for teacher:", currentUser.id)
+
+      // Generate notifications
+      const notificationData = await generateTeacherNotifications(currentUser.id)
+      
+      console.log(`✅ Loaded ${notificationData.length} notifications`)
+      setNotifications(notificationData)
+      setFilteredNotifications(notificationData)
+      
+      if (!showLoader && notificationData.length > 0) {
+        toast.success("Notifications refreshed")
+      }
+    } catch (error) {
+      console.error("❌ Error loading notifications:", error)
+      toast.error("Failed to load notifications")
+    } finally {
+      setLoading(false)
+      setRefreshing(false)
+    }
+  }
+
+  // Initial load
   useEffect(() => {
-    const currentUser = getCurrentUser()
-    setUser(currentUser)
-    setLoading(false)
+    loadNotifications()
   }, [])
 
+  // Auto-refresh every 60 seconds
   useEffect(() => {
+    const interval = setInterval(() => {
+      loadNotifications(false)
+    }, 60000) // 60 seconds
+
+    return () => clearInterval(interval)
+  }, [])
+
+  // Apply filters
+  useEffect(() => {
+    if (!notifications || notifications.length === 0) {
+      setFilteredNotifications([])
+      return
+    }
+
     const filtered = notifications.filter((notification) => {
       const matchesSearch =
-        notification.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        notification.message.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        notification.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        notification.message?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         (notification.studentName && notification.studentName.toLowerCase().includes(searchTerm.toLowerCase()))
 
       const matchesType = typeFilter === "all" || notification.type === typeFilter
@@ -158,6 +159,8 @@ export default function TeacherNotificationsPage() {
         return <AlertTriangle className="h-5 w-5" />
       case "student_message":
         return <User className="h-5 w-5" />
+      case "noc_approval_required":
+        return <FileText className="h-5 w-5" />
       default:
         return <Bell className="h-5 w-5" />
     }
@@ -188,44 +191,108 @@ export default function TeacherNotificationsPage() {
         return "bg-red-100 text-red-800"
       case "student_message":
         return "bg-indigo-100 text-indigo-800"
+      case "noc_approval_required":
+        return "bg-orange-100 text-orange-800"
       default:
         return "bg-gray-100 text-gray-800"
     }
   }
 
-  const handleViewNotification = (notification) => {
+  const handleViewNotification = async (notification) => {
     setSelectedNotification(notification)
     setShowNotificationDialog(true)
 
-    if (!notification.isRead) {
-      markAsRead(notification.id)
+    if (!notification.isRead && user) {
+      await handleMarkAsRead(notification.id)
     }
   }
 
-  const markAsRead = (notificationId) => {
-    setNotifications((prev) => prev.map((notif) => (notif.id === notificationId ? { ...notif, isRead: true } : notif)))
+  const handleMarkAsRead = async (notificationId) => {
+    if (!user) return
+    
+    try {
+      const result = await markNotificationAsRead(notificationId, user.id)
+      if (result.success) {
+        setNotifications((prev) =>
+          prev.map((notif) =>
+            notif.id === notificationId ? { ...notif, isRead: true } : notif
+          )
+        )
+      }
+    } catch (error) {
+      console.error("Error marking notification as read:", error)
+    }
   }
 
-  const markAllAsRead = () => {
-    setNotifications((prev) => prev.map((notif) => ({ ...notif, isRead: true })))
-    toast.success("All notifications marked as read")
+  const handleMarkAllAsRead = async () => {
+    if (!user) return
+    
+    try {
+      const result = await markAllNotificationsAsRead(user.id)
+      if (result.success) {
+        setNotifications((prev) => prev.map((notif) => ({ ...notif, isRead: true })))
+        toast.success("All notifications marked as read")
+      } else {
+        toast.error("Failed to mark notifications as read")
+      }
+    } catch (error) {
+      console.error("Error marking all as read:", error)
+      toast.error("Failed to mark notifications as read")
+    }
   }
 
-  const deleteNotification = (notificationId) => {
-    setNotifications((prev) => prev.filter((notif) => notif.id !== notificationId))
-    toast.success("Notification deleted")
+  const handleDeleteNotification = async (notificationId) => {
+    if (!user) return
+    
+    try {
+      const result = await deleteNotification(notificationId, user.id)
+      if (result.success) {
+        setNotifications((prev) => prev.filter((notif) => notif.id !== notificationId))
+        toast.success("Notification deleted")
+      } else {
+        toast.error("Failed to delete notification")
+      }
+    } catch (error) {
+      console.error("Error deleting notification:", error)
+      toast.error("Failed to delete notification")
+    }
   }
 
-  const handleSendMessage = () => {
+  const handleSendMessage = async () => {
     if (!composeSubject.trim() || !composeMessage.trim()) {
       toast.error("Please fill in all fields")
       return
     }
 
-    toast.success("Message sent successfully")
-    setShowComposeDialog(false)
-    setComposeSubject("")
-    setComposeMessage("")
+    if (!selectedStudentId) {
+      toast.error("Please select a student")
+      return
+    }
+
+    if (!user) {
+      toast.error("User not authenticated")
+      return
+    }
+
+    try {
+      const result = await sendMessageToStudent(user.id, selectedStudentId, composeMessage)
+      if (result.success) {
+        toast.success("Message sent successfully")
+        setShowComposeDialog(false)
+        setComposeSubject("")
+        setComposeMessage("")
+        setSelectedStudentId("")
+      } else {
+        toast.error("Failed to send message")
+      }
+    } catch (error) {
+      console.error("Error sending message:", error)
+      toast.error("Failed to send message")
+    }
+  }
+
+  const handleRefresh = () => {
+    loadNotifications(false)
   }
 
   const unreadCount = notifications.filter((n) => !n.isRead).length
@@ -269,8 +336,16 @@ export default function TeacherNotificationsPage() {
                 </div>
               </div>
               <div className="flex flex-col sm:flex-row gap-3">
-                <Button onClick={markAllAsRead} variant="outline" disabled={unreadCount === 0}>
-                  <MarkAsRead className="h-4 w-4 mr-2" />
+                <Button onClick={handleRefresh} variant="outline" disabled={refreshing}>
+                  {refreshing ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <RefreshCw className="h-4 w-4 mr-2" />
+                  )}
+                  Refresh
+                </Button>
+                <Button onClick={handleMarkAllAsRead} variant="outline" disabled={unreadCount === 0}>
+                  <BookMarked className="h-4 w-4 mr-2" />
                   Mark All Read
                 </Button>
                 <Button
@@ -285,49 +360,61 @@ export default function TeacherNotificationsPage() {
 
             {/* Stats Cards */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-              {[
-                {
-                  title: "Total",
-                  value: notifications.length,
-                  icon: Bell,
-                  color: "blue",
-                  subtitle: "All notifications",
-                },
-                {
-                  title: "Unread",
-                  value: unreadCount,
-                  icon: AlertTriangle,
-                  color: "red",
-                  subtitle: "Need attention",
-                },
-                {
-                  title: "Action Required",
-                  value: notifications.filter((n) => n.actionRequired).length,
-                  icon: CheckCircle,
-                  color: "orange",
-                  subtitle: "Pending actions",
-                },
-                {
-                  title: "High Priority",
-                  value: notifications.filter((n) => n.priority === "high").length,
-                  icon: AlertTriangle,
-                  color: "purple",
-                  subtitle: "Urgent items",
-                },
-              ].map((stat, index) => (
-                <Card key={index} className="hover:shadow-lg transition-shadow duration-200">
-                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium text-gray-600">{stat.title}</CardTitle>
-                    <div className={`w-10 h-10 rounded-xl bg-${stat.color}-100 flex items-center justify-center`}>
-                      <stat.icon className={`h-5 w-5 text-${stat.color}-600`} />
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    <div className={`text-2xl lg:text-3xl font-bold text-${stat.color}-600 mb-1`}>{stat.value}</div>
-                    <p className="text-xs text-gray-500">{stat.subtitle}</p>
-                  </CardContent>
-                </Card>
-              ))}
+              <Card className="hover:shadow-lg transition-shadow duration-200">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium text-gray-600">Total</CardTitle>
+                  <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center">
+                    <Bell className="h-5 w-5 text-blue-600" />
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl lg:text-3xl font-bold text-blue-600 mb-1">{notifications.length}</div>
+                  <p className="text-xs text-gray-500">All notifications</p>
+                </CardContent>
+              </Card>
+
+              <Card className="hover:shadow-lg transition-shadow duration-200">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium text-gray-600">Unread</CardTitle>
+                  <div className="w-10 h-10 rounded-xl bg-red-100 flex items-center justify-center">
+                    <AlertTriangle className="h-5 w-5 text-red-600" />
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl lg:text-3xl font-bold text-red-600 mb-1">{unreadCount}</div>
+                  <p className="text-xs text-gray-500">Need attention</p>
+                </CardContent>
+              </Card>
+
+              <Card className="hover:shadow-lg transition-shadow duration-200">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium text-gray-600">Action Required</CardTitle>
+                  <div className="w-10 h-10 rounded-xl bg-orange-100 flex items-center justify-center">
+                    <CheckCircle className="h-5 w-5 text-orange-600" />
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl lg:text-3xl font-bold text-orange-600 mb-1">
+                    {notifications.filter((n) => n.actionRequired).length}
+                  </div>
+                  <p className="text-xs text-gray-500">Pending actions</p>
+                </CardContent>
+              </Card>
+
+              <Card className="hover:shadow-lg transition-shadow duration-200">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium text-gray-600">High Priority</CardTitle>
+                  <div className="w-10 h-10 rounded-xl bg-purple-100 flex items-center justify-center">
+                    <AlertTriangle className="h-5 w-5 text-purple-600" />
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl lg:text-3xl font-bold text-purple-600 mb-1">
+                    {notifications.filter((n) => n.priority === "high").length}
+                  </div>
+                  <p className="text-xs text-gray-500">Urgent items</p>
+                </CardContent>
+              </Card>
             </div>
 
             {/* Filters */}
@@ -368,9 +455,9 @@ export default function TeacherNotificationsPage() {
                       <SelectItem value="all">All Types</SelectItem>
                       <SelectItem value="report_submitted">Report Submitted</SelectItem>
                       <SelectItem value="certificate_uploaded">Certificate Uploaded</SelectItem>
+                      <SelectItem value="noc_approval_required">NOC Approval</SelectItem>
                       <SelectItem value="task_completed">Task Completed</SelectItem>
                       <SelectItem value="deadline_reminder">Deadline Reminder</SelectItem>
-                      <SelectItem value="student_message">Student Message</SelectItem>
                     </SelectContent>
                   </Select>
                   <Select value={priorityFilter} onValueChange={setPriorityFilter}>
@@ -405,7 +492,11 @@ export default function TeacherNotificationsPage() {
                   <CardContent className="p-12 text-center">
                     <Bell className="h-16 w-16 text-gray-400 mx-auto mb-4" />
                     <h3 className="text-xl font-semibold text-gray-600 mb-2">No notifications found</h3>
-                    <p className="text-gray-500">Try adjusting your search criteria or filters</p>
+                    <p className="text-gray-500">
+                      {notifications.length === 0
+                        ? "You don't have any notifications yet"
+                        : "Try adjusting your search criteria or filters"}
+                    </p>
                   </CardContent>
                 </Card>
               ) : (
@@ -436,7 +527,7 @@ export default function TeacherNotificationsPage() {
                                 <h3 className="text-lg font-bold text-gray-900">{notification.title}</h3>
                                 <div className="flex flex-wrap gap-2">
                                   <Badge className={getTypeColor(notification.type)}>
-                                    {notification.type.replace("_", " ")}
+                                    {notification.type.replace(/_/g, " ")}
                                   </Badge>
                                   <Badge className={getPriorityColor(notification.priority)}>
                                     {notification.priority}
@@ -469,7 +560,7 @@ export default function TeacherNotificationsPage() {
                             <Eye className="h-4 w-4 mr-2" />
                             View
                           </Button>
-                          <Button variant="outline" size="sm" onClick={() => deleteNotification(notification.id)}>
+                          <Button variant="outline" size="sm" onClick={() => handleDeleteNotification(notification.id)}>
                             <Trash2 className="h-4 w-4 mr-2" />
                             Delete
                           </Button>
@@ -496,7 +587,7 @@ export default function TeacherNotificationsPage() {
                     <div className="space-y-4">
                       <div className="flex flex-wrap gap-2">
                         <Badge className={getTypeColor(selectedNotification.type)}>
-                          {selectedNotification.type.replace("_", " ")}
+                          {selectedNotification.type.replace(/_/g, " ")}
                         </Badge>
                         <Badge className={getPriorityColor(selectedNotification.priority)}>
                           {selectedNotification.priority} priority
@@ -532,12 +623,39 @@ export default function TeacherNotificationsPage() {
                           This notification requires your attention. Please take appropriate action.
                         </p>
                         <div className="flex gap-2">
-                          <Button size="sm" className="bg-orange-600 hover:bg-orange-700">
-                            Take Action
-                          </Button>
-                          <Button size="sm" variant="outline">
-                            View Details
-                          </Button>
+                          {selectedNotification.type === "report_submitted" && (
+                            <Button 
+                              size="sm" 
+                              className="bg-orange-600 hover:bg-orange-700"
+                              onClick={() => {
+                                window.location.href = "/teacher/reports"
+                              }}
+                            >
+                              Review Report
+                            </Button>
+                          )}
+                          {selectedNotification.type === "certificate_uploaded" && (
+                            <Button 
+                              size="sm" 
+                              className="bg-orange-600 hover:bg-orange-700"
+                              onClick={() => {
+                                window.location.href = "/teacher/certificates"
+                              }}
+                            >
+                              Review Certificate
+                            </Button>
+                          )}
+                          {selectedNotification.type === "noc_approval_required" && (
+                            <Button 
+                              size="sm" 
+                              className="bg-orange-600 hover:bg-orange-700"
+                              onClick={() => {
+                                window.location.href = "/teacher/noc-approval"
+                              }}
+                            >
+                              Review NOC
+                            </Button>
+                          )}
                         </div>
                       </div>
                     )}
@@ -551,7 +669,7 @@ export default function TeacherNotificationsPage() {
               <DialogContent>
                 <DialogHeader>
                   <DialogTitle>Compose Message</DialogTitle>
-                  <DialogDescription>Send a message or announcement</DialogDescription>
+                  <DialogDescription>Send a message to a student</DialogDescription>
                 </DialogHeader>
                 <div className="space-y-4">
                   <div>

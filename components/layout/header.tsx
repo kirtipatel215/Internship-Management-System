@@ -175,7 +175,7 @@ export function Header({ onMenuClick, user, pageTitle = "Dashboard" }: HeaderPro
         </Button>
 
         {/* Notifications */}
-        <Button 
+        {/* <Button 
           variant="ghost" 
           size="icon" 
           className="relative"
@@ -193,7 +193,7 @@ export function Header({ onMenuClick, user, pageTitle = "Dashboard" }: HeaderPro
           <span className="sr-only">
             {notifications} notification{notifications !== 1 ? "s" : ""}
           </span>
-        </Button>
+        </Button> */}
 
         {/* User menu */}
         <DropdownMenu>
@@ -244,14 +244,14 @@ export function Header({ onMenuClick, user, pageTitle = "Dashboard" }: HeaderPro
             </DropdownMenuItem>
             
             {/* Mobile dark mode toggle */}
-            <DropdownMenuItem 
+            {/* <DropdownMenuItem 
               className="cursor-pointer sm:hidden"
               onClick={toggleDarkMode}
             >
               {darkMode ? <Sun className="mr-2 h-4 w-4" /> : <Moon className="mr-2 h-4 w-4" />}
               {darkMode ? "Light Mode" : "Dark Mode"}
             </DropdownMenuItem>
-            
+             */}
             <DropdownMenuSeparator />
             <DropdownMenuItem 
               onClick={handleLogout} 
