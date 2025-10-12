@@ -114,10 +114,9 @@ export default function TeacherDashboard() {
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null)
   const [debugMode, setDebugMode] = useState(false)
 
-  // Function to load dashboard data with proper error handling
   const loadDashboardData = useCallback(async (showRefreshLoader = false) => {
     try {
-      console.log("🔄 Loading teacher dashboard data...")
+      console.log("📊 Loading teacher dashboard data...")
 
       if (showRefreshLoader) {
         setRefreshing(true)
@@ -127,8 +126,6 @@ export default function TeacherDashboard() {
 
       setError(null)
 
-      // Step 1: Get current user
-      console.log("👤 Fetching current user...")
       const currentUser = await getCurrentUser()
 
       if (!currentUser) {
@@ -142,7 +139,6 @@ export default function TeacherDashboard() {
       console.log("✅ User authenticated:", currentUser.name, currentUser.email)
       setTeacherUser(currentUser)
 
-      // Step 2: Fetch dashboard data
       console.log("📊 Fetching dashboard data for teacher:", currentUser.id)
       const data = await getTeacherDashboardData(currentUser.id)
 
@@ -150,44 +146,29 @@ export default function TeacherDashboard() {
         throw new Error("Failed to load dashboard data from database")
       }
 
-      // Step 3: Validate and sanitize data
       const sanitizedData: TeacherDashboardData = {
-        // Core stats
         totalStudents: Number(data.totalStudents) || 0,
         pendingReports: Number(data.pendingReports) || 0,
         pendingCertificates: Number(data.pendingCertificates) || 0,
         pendingNOCRequests: Number(data.pendingNOCRequests) || 0,
-
-        // Additional stats
         totalReports: Number(data.totalReports) || 0,
         approvedReports: Number(data.approvedReports) || 0,
         totalCertificates: Number(data.totalCertificates) || 0,
         approvedCertificates: Number(data.approvedCertificates) || 0,
         reportsThisWeek: Number(data.reportsThisWeek) || 0,
         certificatesThisMonth: Number(data.certificatesThisMonth) || 0,
-
-        // Arrays
         students: Array.isArray(data.students) ? data.students : [],
         recentReports: Array.isArray(data.recentReports) ? data.recentReports : [],
         recentCertificates: Array.isArray(data.recentCertificates) ? data.recentCertificates : [],
       }
 
-      console.log("✅ Dashboard data loaded successfully:", {
-        students: sanitizedData.totalStudents,
-        reports: sanitizedData.totalReports,
-        certificates: sanitizedData.totalCertificates,
-        pendingReports: sanitizedData.pendingReports,
-        pendingCertificates: sanitizedData.pendingCertificates,
-        pendingNOCs: sanitizedData.pendingNOCRequests,
-      })
-
+      console.log("✅ Dashboard data loaded successfully")
       setDashboardData(sanitizedData)
       setLastRefresh(new Date())
     } catch (err: any) {
       console.error("❌ Error loading dashboard data:", err)
       setError(err.message || "Failed to load dashboard data")
 
-      // Set empty data on error to prevent crashes
       setDashboardData({
         totalStudents: 0,
         pendingReports: 0,
@@ -209,18 +190,15 @@ export default function TeacherDashboard() {
     }
   }, [])
 
-  // Initial load
   useEffect(() => {
     loadDashboardData()
   }, [loadDashboardData])
 
-  // Manual refresh
   const handleRefresh = () => {
     console.log("🔄 Manual refresh triggered")
     loadDashboardData(true)
   }
 
-  // Debug function
   const handleDebug = async () => {
     if (teacherUser) {
       setDebugMode(true)
@@ -229,7 +207,6 @@ export default function TeacherDashboard() {
     }
   }
 
-  // Auto-refresh every 5 minutes
   useEffect(() => {
     const interval = setInterval(() => {
       console.log("⏰ Auto-refresh triggered (5 min)")
@@ -239,7 +216,6 @@ export default function TeacherDashboard() {
     return () => clearInterval(interval)
   }, [loadDashboardData])
 
-  // Debug button component
   const DebugButton = () => (
     <Button
       variant="ghost"
@@ -262,7 +238,6 @@ export default function TeacherDashboard() {
     </Button>
   )
 
-  // Refresh info component
   const RefreshInfo = () => {
     if (!lastRefresh) return null
 
@@ -278,7 +253,6 @@ export default function TeacherDashboard() {
     )
   }
 
-  // Loading state
   if (loading) {
     return (
       <AuthGuard allowedRoles={["teacher"]}>
@@ -297,10 +271,6 @@ export default function TeacherDashboard() {
                   <div key={i} className="h-32 bg-gray-200 rounded-lg"></div>
                 ))}
               </div>
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                <div className="lg:col-span-2 h-96 bg-gray-200 rounded-lg"></div>
-                <div className="h-96 bg-gray-200 rounded-lg"></div>
-              </div>
             </div>
           </div>
         </DashboardLayout>
@@ -308,7 +278,6 @@ export default function TeacherDashboard() {
     )
   }
 
-  // Error state
   if (error && !dashboardData) {
     return (
       <AuthGuard allowedRoles={["teacher"]}>
@@ -324,24 +293,19 @@ export default function TeacherDashboard() {
                   <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
                   <h2 className="text-xl font-semibold mb-2">Dashboard Error</h2>
                   <p className="text-gray-600 mb-4">We encountered an error while loading your dashboard data.</p>
-                  <div className="space-y-2">
-                    <Button onClick={handleRefresh} className="w-full" disabled={refreshing}>
-                      {refreshing ? (
-                        <>
-                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                          Retrying...
-                        </>
-                      ) : (
-                        <>
-                          <RefreshCw className="h-4 w-4 mr-2" />
-                          Try Again
-                        </>
-                      )}
-                    </Button>
-                    <Button variant="outline" onClick={() => (window.location.href = "/auth")} className="w-full">
-                      Sign In Again
-                    </Button>
-                  </div>
+                  <Button onClick={handleRefresh} className="w-full" disabled={refreshing}>
+                    {refreshing ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Retrying...
+                      </>
+                    ) : (
+                      <>
+                        <RefreshCw className="h-4 w-4 mr-2" />
+                        Try Again
+                      </>
+                    )}
+                  </Button>
                 </CardContent>
               </Card>
             </div>
@@ -382,7 +346,6 @@ export default function TeacherDashboard() {
     )
   }
 
-  // Safe access to dashboard data
   const safeRecentReports = dashboardData.recentReports || []
   const safeRecentCertificates = dashboardData.recentCertificates || []
   const safeStudents = dashboardData.students || []
@@ -393,16 +356,18 @@ export default function TeacherDashboard() {
       value: dashboardData.totalStudents,
       icon: Users,
       color: "blue",
-      trend: dashboardData.totalStudents > 0 ? "Active" : "No students yet",
-      subtitle: "Under your guidance",
+      trend: dashboardData.totalStudents > 0 ? "Active" : "No students",
+      subtitle: "Under guidance",
+      href: "/dashboard/teacher/students",
     },
     {
       title: "NOC Approvals",
       value: dashboardData.pendingNOCRequests,
       icon: FileCheck,
       color: "purple",
-      trend: dashboardData.pendingNOCRequests > 0 ? "Pending review" : "All reviewed",
-      subtitle: "Academic approval needed",
+      trend: dashboardData.pendingNOCRequests > 0 ? "Pending" : "All reviewed",
+      subtitle: "Academic approval",
+      href: "/dashboard/teacher/noc",
     },
     {
       title: "Pending Reports",
@@ -411,6 +376,7 @@ export default function TeacherDashboard() {
       color: "orange",
       trend: dashboardData.pendingReports > 0 ? "Needs review" : "All caught up",
       subtitle: "Awaiting review",
+      href: "/dashboard/teacher/reports",
     },
     {
       title: "Total Reports",
@@ -419,18 +385,19 @@ export default function TeacherDashboard() {
       color: "green",
       trend: "This semester",
       subtitle: "Submitted reports",
+      href: "/dashboard/teacher/reports",
     },
     {
-      title: "Pending Certificates",
+      title: "Certificates",
       value: dashboardData.pendingCertificates,
       icon: Award,
       color: "indigo",
-      trend: dashboardData.pendingCertificates > 0 ? "Needs review" : "All reviewed",
+      trend: dashboardData.pendingCertificates > 0 ? "Pending" : "All reviewed",
       subtitle: "Pending approval",
+      href: "/dashboard/teacher/certificates",
     },
   ]
 
-  // Combine recent reports and certificates for activity feed
   const recentActivities = [
     ...safeRecentReports.map((report) => ({
       id: `report-${report.id}`,
@@ -439,6 +406,7 @@ export default function TeacherDashboard() {
       time: report.created_at,
       status: report.status,
       student_id: report.student_id,
+      href: "/dashboard/teacher/reports",
     })),
     ...safeRecentCertificates.map((cert) => ({
       id: `certificate-${cert.id}`,
@@ -447,6 +415,7 @@ export default function TeacherDashboard() {
       time: cert.created_at,
       status: cert.status,
       student_id: cert.student_id,
+      href: "/dashboard/teacher/certificates",
     })),
   ]
     .sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime())
@@ -456,35 +425,55 @@ export default function TeacherDashboard() {
     <AuthGuard allowedRoles={["teacher"]}>
       <DashboardLayout>
         <div className="min-h-screen bg-gray-50">
-          <div className="p-4 lg:p-8 space-y-8">
-            {/* Welcome Header */}
-            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-              <div>
-                <div className="flex items-center space-x-3 mb-2">
-                  <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg">
-                    <Star className="h-6 w-6 text-white" />
-                  </div>
-                  <div>
-                    <h1 className="text-2xl lg:text-3xl font-bold text-gray-900">Welcome back, {teacherUser?.name}!</h1>
-                    <p className="text-gray-600">Manage your students and review their internship progress</p>
-                  </div>
+          <div className="p-3 lg:p-8 space-y-4 lg:space-y-8">
+            {/* Mobile-Optimized Header */}
+            <div className="flex flex-col gap-3">
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 lg:w-12 lg:h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg flex-shrink-0">
+                  <Star className="h-5 w-5 lg:h-6 lg:w-6 text-white" />
                 </div>
-                <div className="flex flex-wrap gap-2 mt-3">
-                  <Badge className="bg-blue-100 text-blue-700 border-blue-200">
-                    <Zap className="h-3 w-3 mr-1" />
-                    Active Mentor
-                  </Badge>
-                  <Badge className="bg-green-100 text-green-700 border-green-200">
-                    <Target className="h-3 w-3 mr-1" />
-                    {dashboardData.totalStudents} Students
-                  </Badge>
+                <div className="flex-1 min-w-0">
+                  <h1 className="text-xl lg:text-3xl font-bold text-gray-900 truncate">
+                    Welcome, {teacherUser?.name?.split(' ')[0]}!
+                  </h1>
+                  <p className="text-sm lg:text-base text-gray-600 mt-0.5">Manage students & review progress</p>
+                </div>
+                <div className="flex gap-1 lg:hidden">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleRefresh}
+                    disabled={refreshing}
+                    className="p-2"
+                  >
+                    {refreshing ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <RefreshCw className="h-4 w-4" />
+                    )}
+                  </Button>
                 </div>
               </div>
-              <div className="text-left lg:text-right space-y-1">
-                <p className="text-sm text-gray-500 font-medium">{teacherUser?.designation || "Faculty Member"}</p>
-                <p className="text-sm text-gray-500">{teacherUser?.department || "Computer Engineering"}</p>
-                {teacherUser?.employeeId && <p className="text-sm text-gray-500">ID: {teacherUser.employeeId}</p>}
-                <div className="flex items-center lg:justify-end gap-2 mt-2">
+
+              {/* Mobile Badges */}
+              <div className="flex flex-wrap gap-2">
+                <Badge className="bg-blue-100 text-blue-700 border-blue-200 text-xs">
+                  <Zap className="h-3 w-3 mr-1" />
+                  Active Mentor
+                </Badge>
+                <Badge className="bg-green-100 text-green-700 border-green-200 text-xs">
+                  <Target className="h-3 w-3 mr-1" />
+                  {dashboardData.totalStudents} Students
+                </Badge>
+              </div>
+
+              {/* Desktop Info - Hidden on Mobile */}
+              <div className="hidden lg:flex lg:justify-between lg:items-center">
+                <div>
+                  <p className="text-sm text-gray-500 font-medium">{teacherUser?.designation || "Faculty Member"}</p>
+                  <p className="text-sm text-gray-500">{teacherUser?.department || "Computer Engineering"}</p>
+                </div>
+                <div className="flex items-center gap-2">
                   <RefreshInfo />
                   <DebugButton />
                   <Button
@@ -492,7 +481,7 @@ export default function TeacherDashboard() {
                     size="sm"
                     onClick={handleRefresh}
                     disabled={refreshing}
-                    className="text-blue-600 hover:text-blue-700"
+                    className="text-blue-600"
                   >
                     {refreshing ? (
                       <Loader2 className="h-4 w-4 mr-1 animate-spin" />
@@ -505,29 +494,102 @@ export default function TeacherDashboard() {
               </div>
             </div>
 
-            {/* Stats Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6">
+            {/* Mobile-Optimized Stats Cards - Now Clickable */}
+            <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 lg:gap-6">
               {stats.map((stat, index) => (
-                <Card key={index} className="hover:shadow-lg transition-shadow duration-200">
-                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium text-gray-600">{stat.title}</CardTitle>
-                    <div className={`w-10 h-10 rounded-xl bg-${stat.color}-100 flex items-center justify-center`}>
-                      <stat.icon className={`h-5 w-5 text-${stat.color}-600`} />
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    <div className={`text-2xl lg:text-3xl font-bold text-${stat.color}-600 mb-2`}>{stat.value}</div>
-                    <div className="flex items-center justify-between">
-                      <p className="text-xs text-gray-500">{stat.subtitle}</p>
-                      <span className="text-xs font-medium text-gray-600">{stat.trend}</span>
-                    </div>
-                  </CardContent>
-                </Card>
+                <Link key={index} href={stat.href} className="block">
+                  <Card className="hover:shadow-lg active:scale-95 transition-all duration-200 cursor-pointer hover:border-blue-300">
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 p-3 lg:pb-2">
+                      <CardTitle className="text-xs lg:text-sm font-medium text-gray-600 leading-tight">
+                        {stat.title}
+                      </CardTitle>
+                      <div className={`w-8 h-8 lg:w-10 lg:h-10 rounded-lg lg:rounded-xl bg-${stat.color}-100 flex items-center justify-center flex-shrink-0`}>
+                        <stat.icon className={`h-4 w-4 lg:h-5 lg:w-5 text-${stat.color}-600`} />
+                      </div>
+                    </CardHeader>
+                    <CardContent className="p-3 pt-0">
+                      <div className={`text-2xl lg:text-3xl font-bold text-${stat.color}-600 mb-1`}>
+                        {stat.value}
+                      </div>
+                      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-0.5">
+                        <p className="text-xs text-gray-500 truncate">{stat.subtitle}</p>
+                        <span className="text-xs font-medium text-gray-600 truncate">{stat.trend}</span>
+                      </div>
+                      {/* Desktop "View" indicator */}
+                      <div className="hidden lg:flex items-center text-xs text-blue-600 mt-2">
+                        <span>View details</span>
+                        <ArrowRight className="h-3 w-3 ml-1" />
+                      </div>
+                    </CardContent>
+                  </Card>
+                </Link>
               ))}
             </div>
 
-            {/* Main Content Grid */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            {/* Mobile-Optimized Quick Actions - Horizontal Scroll */}
+            <div className="lg:hidden">
+              <Card>
+                <CardHeader className="p-3 border-b">
+                  <CardTitle className="text-base font-bold flex items-center gap-2">
+                    <Zap className="h-5 w-5 text-purple-600" />
+                    Quick Actions
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="p-3">
+                  <div className="flex gap-3 overflow-x-auto pb-2 -mx-1 px-1">
+                    {[
+                      {
+                        href: "/dashboard/teacher/students",
+                        icon: Users,
+                        label: "Students",
+                        color: "blue",
+                        count: dashboardData.totalStudents,
+                      },
+                      {
+                        href: "/dashboard/teacher/noc",
+                        icon: FileCheck,
+                        label: "NOC Approvals",
+                        color: "purple",
+                        count: dashboardData.pendingNOCRequests,
+                      },
+                      {
+                        href: "/dashboard/teacher/reports",
+                        icon: FileText,
+                        label: "Reports",
+                        color: "orange",
+                        count: dashboardData.pendingReports,
+                      },
+                      {
+                        href: "/dashboard/teacher/certificates",
+                        icon: Award,
+                        label: "Certificates",
+                        color: "green",
+                        count: dashboardData.pendingCertificates,
+                      },
+                    ].map((action, index) => (
+                      <Link key={index} href={action.href} className="flex-shrink-0">
+                        <div className="w-24 p-3 rounded-lg border-2 border-gray-200 bg-white hover:border-blue-300 hover:shadow-md active:scale-95 transition-all">
+                          <div className={`w-10 h-10 rounded-lg bg-${action.color}-100 flex items-center justify-center mx-auto mb-2`}>
+                            <action.icon className={`h-5 w-5 text-${action.color}-600`} />
+                          </div>
+                          <p className="text-xs font-semibold text-center text-gray-700 mb-1 leading-tight">
+                            {action.label}
+                          </p>
+                          {action.count !== null && action.count > 0 && (
+                            <Badge className={`w-full justify-center text-xs bg-${action.color}-100 text-${action.color}-700`}>
+                              {action.count}
+                            </Badge>
+                          )}
+                        </div>
+                      </Link>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Desktop Layout - Hidden on Mobile */}
+            <div className="hidden lg:grid lg:grid-cols-3 lg:gap-8">
               {/* Recent Activities */}
               <Card className="lg:col-span-2">
                 <CardHeader className="border-b border-gray-100">
@@ -539,7 +601,7 @@ export default function TeacherDashboard() {
                       <div>
                         <CardTitle className="text-xl font-bold text-gray-900">Recent Activities</CardTitle>
                         <CardDescription className="text-gray-600">
-                          Latest submissions and updates from your students
+                          Latest submissions from your students
                         </CardDescription>
                       </div>
                     </div>
@@ -550,41 +612,38 @@ export default function TeacherDashboard() {
                   {recentActivities.length > 0 ? (
                     <div className="space-y-4">
                       {recentActivities.map((activity, index) => (
-                        <div
-                          key={activity.id}
-                          className="flex items-center space-x-4 p-4 rounded-xl bg-gray-50 hover:bg-blue-50 transition-colors duration-200"
-                        >
-                          <div className="flex-shrink-0">
-                            <div
-                              className={`w-12 h-12 ${getActivityGradient(index)} rounded-full flex items-center justify-center shadow-lg`}
-                            >
-                              {activity.type === "report" ? (
-                                <FileText className="h-5 w-5 text-white" />
-                              ) : (
-                                <Award className="h-5 w-5 text-white" />
-                              )}
+                        <Link key={activity.id} href={activity.href}>
+                          <div className="flex items-center space-x-4 p-4 rounded-xl bg-gray-50 hover:bg-blue-50 transition-colors duration-200 cursor-pointer">
+                            <div className="flex-shrink-0">
+                              <div
+                                className={`w-12 h-12 ${getActivityGradient(index)} rounded-full flex items-center justify-center shadow-lg`}
+                              >
+                                {activity.type === "report" ? (
+                                  <FileText className="h-5 w-5 text-white" />
+                                ) : (
+                                  <Award className="h-5 w-5 text-white" />
+                                )}
+                              </div>
                             </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-semibold text-gray-900">{activity.title}</p>
+                              <p className="text-sm text-gray-600">
+                                {new Date(activity.time).toLocaleDateString()} •{" "}
+                                {new Date(activity.time).toLocaleTimeString()}
+                              </p>
+                            </div>
+                            <Badge className={`${getStatusColor(activity.status)} px-3 py-1 text-xs font-medium capitalize`}>
+                              {activity.status}
+                            </Badge>
                           </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-semibold text-gray-900">{activity.title}</p>
-                            <p className="text-sm text-gray-600">
-                              {new Date(activity.time).toLocaleDateString()} •{" "}
-                              {new Date(activity.time).toLocaleTimeString()}
-                            </p>
-                          </div>
-                          <Badge
-                            className={`${getStatusColor(activity.status)} px-3 py-1 text-xs font-medium capitalize`}
-                          >
-                            {activity.status}
-                          </Badge>
-                        </div>
+                        </Link>
                       ))}
                     </div>
                   ) : (
                     <div className="text-center py-12">
                       <Activity className="h-16 w-16 text-gray-300 mx-auto mb-4" />
                       <h3 className="text-lg font-semibold text-gray-600 mb-2">No Recent Activities</h3>
-                      <p className="text-gray-500 mb-6">No student submissions or activities to review yet.</p>
+                      <p className="text-gray-500 mb-6">No student submissions to review yet.</p>
                       <Link href="/dashboard/teacher/students">
                         <Button className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700">
                           <Users className="h-4 w-4 mr-2" />
@@ -593,22 +652,10 @@ export default function TeacherDashboard() {
                       </Link>
                     </div>
                   )}
-
-                  {recentActivities.length > 0 && (
-                    <div className="mt-6 pt-4 border-t border-gray-100">
-                      <Link href="/dashboard/teacher/students">
-                        <Button className="w-full bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white">
-                          <Users className="h-4 w-4 mr-2" />
-                          View All Students
-                          <ArrowRight className="h-4 w-4 ml-2" />
-                        </Button>
-                      </Link>
-                    </div>
-                  )}
                 </CardContent>
               </Card>
 
-              {/* Quick Actions & Student Overview */}
+              {/* Desktop Sidebar */}
               <div className="space-y-6">
                 {/* Quick Actions */}
                 <Card>
@@ -636,7 +683,7 @@ export default function TeacherDashboard() {
                         {
                           href: "/dashboard/teacher/noc",
                           icon: FileCheck,
-                          label: "NOC Academic Approval",
+                          label: "NOC Approvals",
                           color: "purple",
                           count: dashboardData.pendingNOCRequests,
                         },
@@ -667,9 +714,7 @@ export default function TeacherDashboard() {
                             variant="outline"
                             className="w-full justify-start h-14 hover:bg-blue-50 hover:border-blue-200 transition-all duration-200 bg-white border-2"
                           >
-                            <div
-                              className={`w-10 h-10 rounded-lg bg-${action.color}-100 flex items-center justify-center mr-3`}
-                            >
+                            <div className={`w-10 h-10 rounded-lg bg-${action.color}-100 flex items-center justify-center mr-3`}>
                               <action.icon className={`h-5 w-5 text-${action.color}-600`} />
                             </div>
                             <div className="flex-1 text-left">
@@ -691,66 +736,7 @@ export default function TeacherDashboard() {
                   </CardContent>
                 </Card>
 
-                {/* Student Overview */}
-                <Card>
-                  <CardHeader className="border-b border-gray-100">
-                    <div className="flex items-center space-x-3">
-                      <div className="w-10 h-10 bg-emerald-100 rounded-xl flex items-center justify-center">
-                        <Users className="h-5 w-5 text-emerald-600" />
-                      </div>
-                      <div>
-                        <CardTitle className="text-xl font-bold text-gray-900">My Students</CardTitle>
-                        <CardDescription className="text-gray-600">Students under your guidance</CardDescription>
-                      </div>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="p-6">
-                    {safeStudents.length > 0 ? (
-                      <div className="space-y-3">
-                        {safeStudents.slice(0, 5).map((student) => (
-                          <div
-                            key={student.id}
-                            className="flex items-center space-x-3 p-3 rounded-lg bg-gray-50 hover:bg-blue-50 transition-colors duration-200"
-                          >
-                            <div className="w-10 h-10 bg-gradient-to-br from-blue-400 to-purple-500 rounded-full flex items-center justify-center shadow-md">
-                              <User className="h-5 w-5 text-white" />
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm font-semibold text-gray-900 truncate">{student.name}</p>
-                              <p className="text-xs text-gray-600 truncate">{student.roll_number || student.email}</p>
-                            </div>
-                          </div>
-                        ))}
-
-                        {safeStudents.length > 5 && (
-                          <div className="text-center pt-3 border-t border-gray-100">
-                            <p className="text-sm text-gray-500 mb-3">+{safeStudents.length - 5} more students</p>
-                          </div>
-                        )}
-
-                        <div className="pt-3 border-t border-gray-100">
-                          <Link href="/dashboard/teacher/students">
-                            <Button variant="outline" className="w-full bg-transparent">
-                              <Users className="h-4 w-4 mr-2" />
-                              View All Students
-                              <ArrowRight className="h-4 w-4 ml-auto" />
-                            </Button>
-                          </Link>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="text-center py-8">
-                        <Users className="h-12 w-12 text-gray-300 mx-auto mb-4" />
-                        <h3 className="text-lg font-semibold text-gray-600 mb-2">No Students Assigned</h3>
-                        <p className="text-gray-500 text-sm">
-                          No students are currently assigned to you for mentoring.
-                        </p>
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-
-                {/* Performance Overview */}
+                {/* This Week Summary */}
                 <Card>
                   <CardHeader className="border-b border-gray-100">
                     <div className="flex items-center space-x-3">
@@ -765,37 +751,45 @@ export default function TeacherDashboard() {
                   </CardHeader>
                   <CardContent className="p-6">
                     <div className="space-y-4">
-                      <div className="flex justify-between items-center p-3 bg-purple-50 rounded-lg border border-purple-100">
-                        <div className="flex items-center space-x-3">
-                          <FileCheck className="h-5 w-5 text-purple-600" />
-                          <span className="font-medium text-purple-900">NOC approvals pending</span>
+                      <Link href="/dashboard/teacher/noc">
+                        <div className="flex justify-between items-center p-3 bg-purple-50 rounded-lg border border-purple-100 hover:bg-purple-100 cursor-pointer transition-colors">
+                          <div className="flex items-center space-x-3">
+                            <FileCheck className="h-5 w-5 text-purple-600" />
+                            <span className="font-medium text-purple-900">NOC pending</span>
+                          </div>
+                          <span className="text-2xl font-bold text-purple-600">{dashboardData.pendingNOCRequests}</span>
                         </div>
-                        <span className="text-2xl font-bold text-purple-600">{dashboardData.pendingNOCRequests}</span>
-                      </div>
+                      </Link>
 
-                      <div className="flex justify-between items-center p-3 bg-blue-50 rounded-lg border border-blue-100">
-                        <div className="flex items-center space-x-3">
-                          <Clock className="h-5 w-5 text-blue-600" />
-                          <span className="font-medium text-blue-900">Reports to review</span>
+                      <Link href="/dashboard/teacher/reports">
+                        <div className="flex justify-between items-center p-3 bg-blue-50 rounded-lg border border-blue-100 hover:bg-blue-100 cursor-pointer transition-colors">
+                          <div className="flex items-center space-x-3">
+                            <Clock className="h-5 w-5 text-blue-600" />
+                            <span className="font-medium text-blue-900">Reports to review</span>
+                          </div>
+                          <span className="text-2xl font-bold text-blue-600">{dashboardData.pendingReports}</span>
                         </div>
-                        <span className="text-2xl font-bold text-blue-600">{dashboardData.pendingReports}</span>
-                      </div>
+                      </Link>
 
-                      <div className="flex justify-between items-center p-3 bg-green-50 rounded-lg border border-green-100">
-                        <div className="flex items-center space-x-3">
-                          <Award className="h-5 w-5 text-green-600" />
-                          <span className="font-medium text-green-900">Certificates pending</span>
+                      <Link href="/dashboard/teacher/certificates">
+                        <div className="flex justify-between items-center p-3 bg-green-50 rounded-lg border border-green-100 hover:bg-green-100 cursor-pointer transition-colors">
+                          <div className="flex items-center space-x-3">
+                            <Award className="h-5 w-5 text-green-600" />
+                            <span className="font-medium text-green-900">Certificates pending</span>
+                          </div>
+                          <span className="text-2xl font-bold text-green-600">{dashboardData.pendingCertificates}</span>
                         </div>
-                        <span className="text-2xl font-bold text-green-600">{dashboardData.pendingCertificates}</span>
-                      </div>
+                      </Link>
 
-                      <div className="flex justify-between items-center p-3 bg-indigo-50 rounded-lg border border-indigo-100">
-                        <div className="flex items-center space-x-3">
-                          <Users className="h-5 w-5 text-indigo-600" />
-                          <span className="font-medium text-indigo-900">Active students</span>
+                      <Link href="/dashboard/teacher/students">
+                        <div className="flex justify-between items-center p-3 bg-indigo-50 rounded-lg border border-indigo-100 hover:bg-indigo-100 cursor-pointer transition-colors">
+                          <div className="flex items-center space-x-3">
+                            <Users className="h-5 w-5 text-indigo-600" />
+                            <span className="font-medium text-indigo-900">Active students</span>
+                          </div>
+                          <span className="text-2xl font-bold text-indigo-600">{dashboardData.totalStudents}</span>
                         </div>
-                        <span className="text-2xl font-bold text-indigo-600">{dashboardData.totalStudents}</span>
-                      </div>
+                      </Link>
 
                       {(dashboardData.pendingReports > 0 ||
                         dashboardData.pendingCertificates > 0 ||
@@ -804,11 +798,10 @@ export default function TeacherDashboard() {
                           <Alert className="border-orange-200 bg-orange-50">
                             <AlertCircle className="h-4 w-4 text-orange-600" />
                             <AlertDescription className="text-orange-700">
-                              You have{" "}
                               {dashboardData.pendingReports +
                                 dashboardData.pendingCertificates +
                                 dashboardData.pendingNOCRequests}{" "}
-                              items pending review.
+                              items need your attention
                             </AlertDescription>
                           </Alert>
                         </div>
@@ -819,23 +812,159 @@ export default function TeacherDashboard() {
               </div>
             </div>
 
-            {/* Performance Metrics */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {/* Mobile: Recent Activities - Compact View */}
+            <div className="lg:hidden">
               <Card>
-                <CardHeader>
+                <CardHeader className="p-3 border-b">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Activity className="h-5 w-5 text-blue-600" />
+                      <CardTitle className="text-base font-bold">Recent Activities</CardTitle>
+                    </div>
+                    <Badge className="bg-blue-100 text-blue-700 text-xs">{recentActivities.length}</Badge>
+                  </div>
+                </CardHeader>
+                <CardContent className="p-3">
+                  {recentActivities.length > 0 ? (
+                    <div className="space-y-2">
+                      {recentActivities.slice(0, 5).map((activity, index) => (
+                        <Link key={activity.id} href={activity.href}>
+                          <div className="flex items-center gap-3 p-3 rounded-lg bg-gray-50 active:bg-blue-50 transition-colors">
+                            <div className={`w-10 h-10 ${getActivityGradient(index)} rounded-full flex items-center justify-center shadow flex-shrink-0`}>
+                              {activity.type === "report" ? (
+                                <FileText className="h-4 w-4 text-white" />
+                              ) : (
+                                <Award className="h-4 w-4 text-white" />
+                              )}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-semibold text-gray-900 truncate">{activity.title}</p>
+                              <p className="text-xs text-gray-600">
+                                {new Date(activity.time).toLocaleDateString()}
+                              </p>
+                            </div>
+                            <Badge className={`${getStatusColor(activity.status)} text-xs px-2 py-0.5 capitalize`}>
+                              {activity.status}
+                            </Badge>
+                          </div>
+                        </Link>
+                      ))}
+                      {recentActivities.length > 5 && (
+                        <Link href="/dashboard/teacher/students">
+                          <Button variant="outline" className="w-full mt-2 text-sm">
+                            View All Activities
+                            <ArrowRight className="h-4 w-4 ml-2" />
+                          </Button>
+                        </Link>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="text-center py-8">
+                      <Activity className="h-12 w-12 text-gray-300 mx-auto mb-3" />
+                      <p className="text-sm text-gray-600 mb-4">No recent activities</p>
+                      <Link href="/dashboard/teacher/students">
+                        <Button size="sm" className="bg-blue-600">
+                          <Users className="h-4 w-4 mr-2" />
+                          View Students
+                        </Button>
+                      </Link>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Mobile: This Week Summary - Compact Cards */}
+            <div className="lg:hidden grid grid-cols-2 gap-3">
+              <Link href="/dashboard/teacher/noc">
+                <Card className="active:scale-95 transition-transform cursor-pointer hover:shadow-md">
+                  <CardContent className="p-3">
+                    <div className="flex items-center gap-2 mb-2">
+                      <div className="w-8 h-8 rounded-lg bg-purple-100 flex items-center justify-center">
+                        <FileCheck className="h-4 w-4 text-purple-600" />
+                      </div>
+                      <span className="text-xs font-medium text-gray-700">NOC Pending</span>
+                    </div>
+                    <div className="text-2xl font-bold text-purple-600">{dashboardData.pendingNOCRequests}</div>
+                  </CardContent>
+                </Card>
+              </Link>
+
+              <Link href="/dashboard/teacher/reports">
+                <Card className="active:scale-95 transition-transform cursor-pointer hover:shadow-md">
+                  <CardContent className="p-3">
+                    <div className="flex items-center gap-2 mb-2">
+                      <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center">
+                        <Clock className="h-4 w-4 text-blue-600" />
+                      </div>
+                      <span className="text-xs font-medium text-gray-700">Reports</span>
+                    </div>
+                    <div className="text-2xl font-bold text-blue-600">{dashboardData.pendingReports}</div>
+                  </CardContent>
+                </Card>
+              </Link>
+
+              <Link href="/dashboard/teacher/certificates">
+                <Card className="active:scale-95 transition-transform cursor-pointer hover:shadow-md">
+                  <CardContent className="p-3">
+                    <div className="flex items-center gap-2 mb-2">
+                      <div className="w-8 h-8 rounded-lg bg-green-100 flex items-center justify-center">
+                        <Award className="h-4 w-4 text-green-600" />
+                      </div>
+                      <span className="text-xs font-medium text-gray-700">Certificates</span>
+                    </div>
+                    <div className="text-2xl font-bold text-green-600">{dashboardData.pendingCertificates}</div>
+                  </CardContent>
+                </Card>
+              </Link>
+
+              <Link href="/dashboard/teacher/students">
+                <Card className="active:scale-95 transition-transform cursor-pointer hover:shadow-md">
+                  <CardContent className="p-3">
+                    <div className="flex items-center gap-2 mb-2">
+                      <div className="w-8 h-8 rounded-lg bg-indigo-100 flex items-center justify-center">
+                        <Users className="h-4 w-4 text-indigo-600" />
+                      </div>
+                      <span className="text-xs font-medium text-gray-700">Students</span>
+                    </div>
+                    <div className="text-2xl font-bold text-indigo-600">{dashboardData.totalStudents}</div>
+                  </CardContent>
+                </Card>
+              </Link>
+            </div>
+
+            {/* Mobile: Alert for Pending Items */}
+            {(dashboardData.pendingReports > 0 ||
+              dashboardData.pendingCertificates > 0 ||
+              dashboardData.pendingNOCRequests > 0) && (
+              <div className="lg:hidden">
+                <Alert className="border-orange-200 bg-orange-50">
+                  <AlertCircle className="h-4 w-4 text-orange-600" />
+                  <AlertDescription className="text-sm text-orange-700">
+                    {dashboardData.pendingReports + dashboardData.pendingCertificates + dashboardData.pendingNOCRequests}{" "}
+                    items need your attention
+                  </AlertDescription>
+                </Alert>
+              </div>
+            )}
+
+            {/* Performance Metrics - Responsive */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 lg:gap-6">
+              <Card>
+                <CardHeader className="p-4 lg:p-6">
                   <div className="flex items-center space-x-3">
                     <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
                       <Target className="h-4 w-4 text-blue-600" />
                     </div>
-                    <CardTitle className="text-lg font-bold text-gray-900">Review Efficiency</CardTitle>
+                    <CardTitle className="text-base lg:text-lg font-bold text-gray-900">Review Efficiency</CardTitle>
                   </div>
                 </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
+                <CardContent className="p-4 lg:p-6 pt-0">
+                  <div className="space-y-3">
                     <div>
                       <div className="flex justify-between items-center mb-2">
-                        <span className="text-sm text-gray-600 font-medium">Reports reviewed</span>
-                        <span className="font-bold text-blue-600">
+                        <span className="text-xs lg:text-sm text-gray-600 font-medium">Reports reviewed</span>
+                        <span className="font-bold text-blue-600 text-sm lg:text-base">
                           {dashboardData.approvedReports}/{dashboardData.totalReports}
                         </span>
                       </div>
@@ -845,13 +974,13 @@ export default function TeacherDashboard() {
                             ? (dashboardData.approvedReports / dashboardData.totalReports) * 100
                             : 0
                         }
-                        className="h-3"
+                        className="h-2 lg:h-3"
                       />
                     </div>
                     <div>
-                      <div className="flex justify-between items-center mb-2">
-                        <span className="text-sm text-gray-600 font-medium">This week</span>
-                        <span className="font-bold text-green-600">{dashboardData.reportsThisWeek}</span>
+                      <div className="flex justify-between items-center">
+                        <span className="text-xs lg:text-sm text-gray-600 font-medium">This week</span>
+                        <span className="font-bold text-green-600 text-sm lg:text-base">{dashboardData.reportsThisWeek}</span>
                       </div>
                     </div>
                   </div>
@@ -859,23 +988,23 @@ export default function TeacherDashboard() {
               </Card>
 
               <Card>
-                <CardHeader>
+                <CardHeader className="p-4 lg:p-6">
                   <div className="flex items-center space-x-3">
                     <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center">
                       <Star className="h-4 w-4 text-green-600" />
                     </div>
-                    <CardTitle className="text-lg font-bold text-gray-900">Student Progress</CardTitle>
+                    <CardTitle className="text-base lg:text-lg font-bold text-gray-900">Student Progress</CardTitle>
                   </div>
                 </CardHeader>
-                <CardContent>
+                <CardContent className="p-4 lg:p-6 pt-0">
                   <div className="space-y-2">
                     <div className="flex justify-between items-center">
-                      <span className="text-sm text-gray-600">Active submissions</span>
-                      <span className="font-semibold text-green-600">{dashboardData.totalReports}</span>
+                      <span className="text-xs lg:text-sm text-gray-600">Active submissions</span>
+                      <span className="font-semibold text-green-600 text-sm lg:text-base">{dashboardData.totalReports}</span>
                     </div>
                     <div className="flex justify-between items-center">
-                      <span className="text-sm text-gray-600">Completion rate</span>
-                      <span className="font-semibold text-blue-600">
+                      <span className="text-xs lg:text-sm text-gray-600">Completion rate</span>
+                      <span className="font-semibold text-blue-600 text-sm lg:text-base">
                         {dashboardData.totalStudents > 0
                           ? Math.round((dashboardData.approvedReports / dashboardData.totalStudents) * 100)
                           : 0}
@@ -883,35 +1012,35 @@ export default function TeacherDashboard() {
                       </span>
                     </div>
                     <div className="flex justify-between items-center">
-                      <span className="text-sm text-gray-600">Certificates issued</span>
-                      <span className="font-semibold text-purple-600">{dashboardData.approvedCertificates}</span>
+                      <span className="text-xs lg:text-sm text-gray-600">Certificates issued</span>
+                      <span className="font-semibold text-purple-600 text-sm lg:text-base">{dashboardData.approvedCertificates}</span>
                     </div>
                   </div>
                 </CardContent>
               </Card>
 
               <Card>
-                <CardHeader>
+                <CardHeader className="p-4 lg:p-6">
                   <div className="flex items-center space-x-3">
                     <div className="w-8 h-8 bg-purple-100 rounded-lg flex items-center justify-center">
                       <BarChart3 className="h-4 w-4 text-purple-600" />
                     </div>
-                    <CardTitle className="text-lg font-bold text-gray-900">Quick Stats</CardTitle>
+                    <CardTitle className="text-base lg:text-lg font-bold text-gray-900">Quick Stats</CardTitle>
                   </div>
                 </CardHeader>
-                <CardContent>
+                <CardContent className="p-4 lg:p-6 pt-0">
                   <div className="space-y-2">
                     <div className="flex justify-between items-center">
-                      <span className="text-sm text-gray-600">Students mentored</span>
-                      <span className="font-semibold text-blue-600">{dashboardData.totalStudents}</span>
+                      <span className="text-xs lg:text-sm text-gray-600">Students mentored</span>
+                      <span className="font-semibold text-blue-600 text-sm lg:text-base">{dashboardData.totalStudents}</span>
                     </div>
                     <div className="flex justify-between items-center">
-                      <span className="text-sm text-gray-600">Reports this week</span>
-                      <span className="font-semibold text-green-600">{dashboardData.reportsThisWeek}</span>
+                      <span className="text-xs lg:text-sm text-gray-600">Reports this week</span>
+                      <span className="font-semibold text-green-600 text-sm lg:text-base">{dashboardData.reportsThisWeek}</span>
                     </div>
                     <div className="flex justify-between items-center">
-                      <span className="text-sm text-gray-600">Pending reviews</span>
-                      <span className="font-semibold text-orange-600">
+                      <span className="text-xs lg:text-sm text-gray-600">Pending reviews</span>
+                      <span className="font-semibold text-orange-600 text-sm lg:text-base">
                         {dashboardData.pendingReports +
                           dashboardData.pendingCertificates +
                           dashboardData.pendingNOCRequests}

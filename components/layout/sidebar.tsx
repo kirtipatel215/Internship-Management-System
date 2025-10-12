@@ -209,7 +209,7 @@ function SidebarContent({ user, onItemClick }: { user: any; onItemClick?: () => 
             { name: "Dashboard", href: "/dashboard/teacher", icon: Home },
             { name: "My Students", href: "/dashboard/teacher/students", icon: Users },
             {
-              name: "NOC Academic Approval",
+              name: "NOC  Approval",
               href: "/dashboard/teacher/noc",
               icon: FileCheck,
               badge: counts.pendingNOCs || undefined,
