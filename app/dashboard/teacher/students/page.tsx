@@ -31,7 +31,9 @@ import {
   Star,
   GraduationCap,
   AlertCircle,
-  Loader2
+  Loader2,
+  ChevronDown,
+  ChevronUp
 } from "lucide-react"
 import { useState, useEffect } from "react"
 import { getCurrentUser, getStudentsByTeacher, getStudentDetails, sendMessageToStudent } from "@/lib/data"
@@ -64,18 +66,14 @@ export default function TeacherStudentsPage() {
   const [students, setStudents] = useState<Student[]>([])
   const [filteredStudents, setFilteredStudents] = useState<Student[]>([])
   const [searchTerm, setSearchTerm] = useState("")
-  const [statusFilter, setStatusFilter] = useState("all")
+  const [statusFilter, setStatusFilter] = useState("active") // Default to active
   const [companyFilter, setCompanyFilter] = useState("all")
   const [progressFilter, setProgressFilter] = useState("all")
-  const [selectedStudent, setSelectedStudent] = useState<Student | null>(null)
-  const [showStudentDialog, setShowStudentDialog] = useState(false)
-  const [showMessageDialog, setShowMessageDialog] = useState(false)
-  const [messageText, setMessageText] = useState("")
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [sendingMessage, setSendingMessage] = useState(false)
-  const [studentDetails, setStudentDetails] = useState<any>(null)
-  const [loadingDetails, setLoadingDetails] = useState(false)
+  const [expandedStudentId, setExpandedStudentId] = useState<string | null>(null)
+  const [studentDetailsCache, setStudentDetailsCache] = useState<{[key: string]: any}>({})
+  const [loadingDetailsId, setLoadingDetailsId] = useState<string | null>(null)
 
   useEffect(() => {
     loadData()
@@ -90,7 +88,7 @@ export default function TeacherStudentsPage() {
       setLoading(true)
       setError(null)
       
-      console.log('🔄 Loading teacher data and students...')
+      console.log('📄 Loading teacher data and students...')
       
       const currentUser = await getCurrentUser()
       setUser(currentUser)
@@ -197,57 +195,25 @@ ${filteredStudents
     toast.success("CSV report downloaded successfully!")
   }
 
-  const handleViewStudent = async (student: Student) => {
-    setSelectedStudent(student)
-    setShowStudentDialog(true)
-    setLoadingDetails(true)
+  const toggleStudentExpand = async (studentId: string) => {
+    const newExpandedId = expandedStudentId === studentId ? null : studentId
+    setExpandedStudentId(newExpandedId)
     
-    try {
-      const details = await getStudentDetails(student.id)
-      setStudentDetails(details)
-    } catch (error) {
-      console.error('Error loading student details:', error)
-      toast.error('Failed to load student details')
-    } finally {
-      setLoadingDetails(false)
-    }
-  }
-
-  const handleSendMessage = (student: Student) => {
-    setSelectedStudent(student)
-    setMessageText("")
-    setShowMessageDialog(true)
-  }
-
-  const handleSendMessageSubmit = async () => {
-    if (!messageText.trim()) {
-      toast.error("Please enter a message")
-      return
-    }
-
-    if (!selectedStudent || !user?.id) {
-      toast.error("Missing required information")
-      return
-    }
-
-    try {
-      setSendingMessage(true)
-      
-      const result = await sendMessageToStudent(user.id, selectedStudent.id, messageText)
-      
-      if (result.success) {
-        toast.success(`Message sent to ${selectedStudent.name}`)
-        setShowMessageDialog(false)
-        setMessageText("")
-        setSelectedStudent(null)
-      } else {
-        toast.error(result.error || 'Failed to send message')
+    // Load details if expanding and not cached
+    if (newExpandedId && !studentDetailsCache[studentId]) {
+      setLoadingDetailsId(studentId)
+      try {
+        const details = await getStudentDetails(studentId)
+        setStudentDetailsCache(prev => ({
+          ...prev,
+          [studentId]: details
+        }))
+      } catch (error) {
+        console.error('Error loading student details:', error)
+        toast.error('Failed to load student details')
+      } finally {
+        setLoadingDetailsId(null)
       }
-    } catch (error) {
-      console.error('Error sending message:', error)
-      toast.error('Failed to send message')
-    } finally {
-      setSendingMessage(false)
     }
   }
 
@@ -269,19 +235,19 @@ ${filteredStudents
   return (
     <AuthGuard allowedRoles={["teacher"]}>
       <DashboardLayout>
-        <div className="container mx-auto p-6 space-y-6">
+        <div className="container mx-auto p-3 sm:p-6 space-y-4 sm:space-y-6">
           {/* Header */}
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">My Students</h1>
-              <p className="text-gray-600">Monitor and guide your assigned students' internship progress</p>
+              <h1 className="text-xl sm:text-2xl font-bold text-gray-900">My Students</h1>
+              <p className="text-sm sm:text-base text-gray-600">Monitor and guide your assigned students</p>
               {user && (
-                <p className="text-sm text-blue-600 mt-1">
-                  Logged in as: {user.name} ({user.email})
+                <p className="text-xs sm:text-sm text-blue-600 mt-1">
+                  {user.name} ({user.email})
                 </p>
               )}
             </div>
-            <Button onClick={handleDownloadCSV} disabled={filteredStudents.length === 0}>
+            <Button onClick={handleDownloadCSV} disabled={filteredStudents.length === 0} size="sm" className="w-full sm:w-auto">
               <Download className="w-4 h-4 mr-2" />
               Export CSV
             </Button>
@@ -291,13 +257,12 @@ ${filteredStudents
           {error && (
             <Alert>
               <AlertCircle className="h-4 w-4" />
-              <AlertDescription>
-                {error}
+              <AlertDescription className="flex flex-col sm:flex-row sm:items-center gap-2">
+                <span className="flex-1">{error}</span>
                 <Button 
                   variant="outline" 
                   size="sm" 
                   onClick={loadData}
-                  className="ml-2"
                 >
                   Try Again
                 </Button>
@@ -305,81 +270,130 @@ ${filteredStudents
             </Alert>
           )}
 
-          {/* Stats Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            {[
-              {
-                title: "Total Students",
-                value: students.length,
-                icon: Users,
-                color: "blue",
-                subtitle: "Under your guidance",
-              },
-              {
-                title: "Active Internships",
-                value: students.filter((s) => s.status === "active").length,
-                icon: TrendingUp,
-                color: "emerald",
-                subtitle: "Currently ongoing",
-              },
-              {
-                title: "Completed",
-                value: students.filter((s) => s.status === "completed").length,
-                icon: Award,
-                color: "purple",
-                subtitle: "Successfully finished",
-              },
-              {
-                title: "Avg Progress",
-                value: students.length > 0 
-                  ? `${Math.round(students.reduce((acc, s) => acc + s.progress, 0) / students.length)}%`
-                  : "0%",
-                icon: FileText,
-                color: "orange",
-                subtitle: "Overall completion",
-              },
-            ].map((stat, index) => (
-              <Card key={index} className="hover:shadow-md transition-shadow">
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">{stat.title}</CardTitle>
-                  <stat.icon className={`h-4 w-4 text-${stat.color}-500`} />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">{stat.value}</div>
-                  <p className="text-xs text-muted-foreground">{stat.subtitle}</p>
-                </CardContent>
-              </Card>
-            ))}
+          {/* Stats Cards - Horizontal Scroll on Mobile */}
+          <div className="overflow-x-auto -mx-3 px-3 sm:mx-0 sm:px-0">
+            <div className="flex gap-3 sm:grid sm:grid-cols-2 lg:grid-cols-4 min-w-max sm:min-w-0">
+              {[
+                {
+                  title: "Total Students",
+                  value: students.length,
+                  icon: Users,
+                  color: "blue",
+                  subtitle: "Under guidance",
+                },
+                {
+                  title: "Active",
+                  value: students.filter((s) => s.status === "active").length,
+                  icon: TrendingUp,
+                  color: "emerald",
+                  subtitle: "Ongoing",
+                },
+                {
+                  title: "Completed",
+                  value: students.filter((s) => s.status === "completed").length,
+                  icon: Award,
+                  color: "purple",
+                  subtitle: "Finished",
+                },
+                {
+                  title: "Avg Progress",
+                  value: students.length > 0 
+                    ? `${Math.round(students.reduce((acc, s) => acc + s.progress, 0) / students.length)}%`
+                    : "0%",
+                  icon: FileText,
+                  color: "orange",
+                  subtitle: "Overall",
+                },
+              ].map((stat, index) => (
+                <Card key={index} className="hover:shadow-md transition-shadow min-w-[160px] sm:min-w-0">
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 p-4">
+                    <CardTitle className="text-xs sm:text-sm font-medium">{stat.title}</CardTitle>
+                    <stat.icon className={`h-4 w-4 text-${stat.color}-500`} />
+                  </CardHeader>
+                  <CardContent className="p-4 pt-0">
+                    <div className="text-xl sm:text-2xl font-bold">{stat.value}</div>
+                    <p className="text-xs text-muted-foreground">{stat.subtitle}</p>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
           </div>
 
-          {/* Filters */}
+          {/* Filters - Single Horizontal Div on Mobile */}
           <Card>
-            <CardHeader>
+            <CardHeader className="p-4">
               <div className="flex items-center justify-between">
-                <CardTitle className="text-lg font-semibold flex items-center gap-2">
-                  <Filter className="w-5 h-5" />
-                  Filters & Search
+                <CardTitle className="text-base sm:text-lg font-semibold flex items-center gap-2">
+                  <Filter className="w-4 h-4 sm:w-5 sm:h-5" />
+                  <span className="hidden sm:inline">Filters & Search</span>
+                  <span className="sm:hidden">Filters</span>
                   {activeFiltersCount > 0 && (
-                    <Badge variant="secondary" className="ml-2">
-                      {activeFiltersCount} active
+                    <Badge variant="secondary" className="text-xs">
+                      {activeFiltersCount}
                     </Badge>
                   )}
                 </CardTitle>
                 {activeFiltersCount > 0 && (
                   <Button variant="outline" size="sm" onClick={clearFilters}>
-                    <X className="w-4 h-4 mr-1" />
-                    Clear All
+                    <X className="w-3 h-3 sm:w-4 sm:h-4 sm:mr-1" />
+                    <span className="hidden sm:inline">Clear</span>
                   </Button>
                 )}
               </div>
             </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <CardContent className="p-4 pt-0">
+              {/* Mobile: Single row with horizontal scroll */}
+              <div className="flex sm:hidden gap-2 overflow-x-auto pb-2 -mx-4 px-4">
+                <Input
+                  placeholder="Search..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="min-w-[200px] flex-1"
+                />
+                <Select value={statusFilter} onValueChange={setStatusFilter}>
+                  <SelectTrigger className="min-w-[120px]">
+                    <SelectValue placeholder="Status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Status</SelectItem>
+                    <SelectItem value="active">Active</SelectItem>
+                    <SelectItem value="completed">Completed</SelectItem>
+                    <SelectItem value="inactive">Inactive</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select value={companyFilter} onValueChange={setCompanyFilter}>
+                  <SelectTrigger className="min-w-[120px]">
+                    <SelectValue placeholder="Company" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All</SelectItem>
+                    {uniqueCompanies.map((company) => (
+                      <SelectItem key={company} value={company}>
+                        {company}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select value={progressFilter} onValueChange={setProgressFilter}>
+                  <SelectTrigger className="min-w-[120px]">
+                    <SelectValue placeholder="Progress" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All</SelectItem>
+                    <SelectItem value="high">High (80%+)</SelectItem>
+                    <SelectItem value="medium">Medium</SelectItem>
+                    <SelectItem value="low">Low (&lt;50%)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Desktop: Grid layout */}
+              <div className="hidden sm:grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="search">Search Students</Label>
                   <Input
                     id="search"
-                    placeholder="Search by name, roll number, or company..."
+                    placeholder="Search by name, roll number..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                   />
@@ -436,349 +450,230 @@ ${filteredStudents
           </Card>
 
           {/* Students List */}
-          <div className="space-y-4">
+          <div className="space-y-3 sm:space-y-4">
             {filteredStudents.length === 0 ? (
               <Card>
-                <CardContent className="flex items-center justify-center h-32">
+                <CardContent className="flex items-center justify-center h-32 p-4">
                   <div className="text-center">
-                    <Users className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                    <p className="text-gray-500 mb-2">No students found</p>
-                    <p className="text-sm text-gray-400">
-                      Try adjusting your search criteria or filters
+                    <Users className="h-10 w-10 sm:h-12 sm:w-12 text-gray-400 mx-auto mb-3 sm:mb-4" />
+                    <p className="text-sm sm:text-base text-gray-500 mb-2">No students found</p>
+                    <p className="text-xs sm:text-sm text-gray-400">
+                      Try adjusting your filters
                     </p>
                   </div>
                 </CardContent>
               </Card>
             ) : (
-              filteredStudents.map((student, index) => (
-                <Card key={student.id} className="hover:shadow-md transition-shadow">
-                  <CardContent className="p-6">
-                    <div className="flex flex-col lg:flex-row lg:items-center gap-6">
-                      {/* Student Avatar & Basic Info */}
-                      <div className="flex items-center gap-4">
-                        <div className={`w-12 h-12 rounded-full flex items-center justify-center text-white font-semibold ${getGradientAvatar(student.name, index)}`}>
-                          {student.name
-                            .split(" ")
-                            .map((n) => n[0])
-                            .join("")}
+              filteredStudents.map((student, index) => {
+                const isExpanded = expandedStudentId === student.id
+                const studentDetails = studentDetailsCache[student.id]
+                const isLoadingDetails = loadingDetailsId === student.id
+                
+                return (
+                  <Card key={student.id} className="hover:shadow-md transition-shadow">
+                    <CardContent className="p-3 sm:p-6">
+                      {/* Header - Always visible */}
+                      <div 
+                        className="flex items-start gap-3 sm:gap-4 cursor-pointer"
+                        onClick={() => toggleStudentExpand(student.id)}
+                      >
+                        <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-full flex items-center justify-center text-white text-sm font-semibold flex-shrink-0 ${getGradientAvatar(student.name, index)}`}>
+                          {student.name.split(" ").map((n) => n[0]).join("")}
                         </div>
-                        <div>
-                          <div className="flex items-center gap-2 mb-1">
-                            <h3 className="font-semibold text-lg">{student.name}</h3>
-                            <Badge className={getStatusColor(student.status)}>
-                              {student.status}
-                            </Badge>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-start justify-between gap-2 mb-1">
+                            <h3 className="font-semibold text-base sm:text-lg">{student.name}</h3>
+                            {isExpanded ? <ChevronUp className="w-5 h-5 text-gray-400 flex-shrink-0" /> : <ChevronDown className="w-5 h-5 text-gray-400 flex-shrink-0" />}
                           </div>
-                          <p className="text-sm text-gray-600">{student.rollNumber} • {student.department}</p>
-                          <div className="flex items-center gap-4 mt-2 text-sm text-gray-500">
-                            <div className="flex items-center gap-1">
-                              <Mail className="w-4 h-4" />
-                              {student.email}
-                            </div>
-                            <div className="flex items-center gap-1">
-                              <Phone className="w-4 h-4" />
-                              {student.phone}
-                            </div>
-                          </div>
-                          <p className="text-sm text-gray-500 mt-1">
-                            CGPA: {student.cgpa}
-                          </p>
-                        </div>
-                      </div>
-
-                      {/* Internship Info */}
-                      <div className="flex-1">
-                        {student.company ? (
-                          <div className="space-y-2">
-                            <h4 className="font-medium text-gray-900">Current Internship</h4>
-                            <div className="space-y-1">
-                              <div className="flex items-center gap-2">
-                                <Building className="w-4 h-4 text-gray-400" />
-                                <span className="font-medium">{student.company}</span>
+                          <p className="text-xs sm:text-sm text-gray-600">{student.rollNumber} • {student.department}</p>
+                          
+                          {/* Active Internship Info - Always visible */}
+                          {student.company && (
+                            <div className="mt-2 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-2 sm:p-3">
+                              <div className="flex items-center gap-2 mb-1">
+                                <Building className="w-3 h-3 sm:w-4 sm:h-4 text-blue-600" />
+                                <span className="font-medium text-xs sm:text-sm text-blue-900">{student.company}</span>
+                                <Badge className={`${getStatusColor(student.status)} text-xs`}>
+                                  {student.status}
+                                </Badge>
                               </div>
-                              <p className="text-sm text-gray-600">{student.position}</p>
-                              <p className="text-sm text-gray-500">Supervisor: {student.supervisor}</p>
-                              <div className="flex items-center gap-4 text-sm text-gray-500">
-                                <div className="flex items-center gap-1">
-                                  <Calendar className="w-4 h-4" />
-                                  Start: {student.startDate ? new Date(student.startDate).toLocaleDateString() : 'N/A'}
-                                </div>
-                                <div className="flex items-center gap-1">
-                                  <Calendar className="w-4 h-4" />
-                                  End: {student.endDate ? new Date(student.endDate).toLocaleDateString() : 'N/A'}
+                              <p className="text-xs text-blue-700 ml-5 sm:ml-6">{student.position}</p>
+                            </div>
+                          )}
+                          
+                          {!student.company && (
+                            <div className="mt-2 flex items-center gap-2">
+                              <Badge className={`${getStatusColor(student.status)} text-xs`}>
+                                {student.status}
+                              </Badge>
+                              <span className="text-xs text-gray-500">No active internship</span>
+                            </div>
+                          )}
+                          
+                          {/* Progress bar - Always visible */}
+                          <div className="mt-3">
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="text-xs font-medium text-gray-700">Progress</span>
+                              <span className={`text-xs font-semibold ${getProgressColor(student.progress)}`}>
+                                {student.progress}%
+                              </span>
+                            </div>
+                            <Progress value={student.progress} className="h-1.5 sm:h-2" />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Expanded Details */}
+                      {isExpanded && (
+                        <div className="mt-4 space-y-4 animate-in slide-in-from-top-2 border-t pt-4">
+                          {isLoadingDetails ? (
+                            <div className="flex items-center justify-center py-4">
+                              <Loader2 className="h-5 w-5 animate-spin mr-2" />
+                              <span className="text-sm text-gray-600">Loading details...</span>
+                            </div>
+                          ) : (
+                            <>
+                              {/* Personal Information */}
+                              <div>
+                                <h4 className="font-semibold text-sm sm:text-base mb-3 flex items-center gap-2">
+                                  <GraduationCap className="w-4 h-4" />
+                                  Personal Information
+                                </h4>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                                  <div className="space-y-2">
+                                    <div className="flex items-center gap-2 text-gray-600">
+                                      <Mail className="w-4 h-4 flex-shrink-0" />
+                                      <span className="truncate">{student.email}</span>
+                                    </div>
+                                    <div className="flex items-center gap-2 text-gray-600">
+                                      <Phone className="w-4 h-4 flex-shrink-0" />
+                                      <span>{student.phone}</span>
+                                    </div>
+                                  </div>
+                                  <div className="space-y-2">
+                                    <div className="flex justify-between">
+                                      <span className="font-medium text-gray-700">CGPA:</span>
+                                      <span className="font-semibold text-gray-900">{student.cgpa}</span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                      <span className="font-medium text-gray-700">Department:</span>
+                                      <span className="text-gray-900">{student.department}</span>
+                                    </div>
+                                  </div>
                                 </div>
                               </div>
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="text-gray-500 text-sm">
-                            No active internship
-                          </div>
-                        )}
-                      </div>
 
-                      {/* Progress & Stats */}
-                         <div className="space-y-3">
-                        <div>
-                          <div className="flex items-center justify-between mb-2">
-                            <span className="text-sm font-medium">Progress</span>
-                            <span className={`text-sm font-semibold ${getProgressColor(student.progress)}`}>
-                              {student.progress}%
-                            </span>
-                          </div>
-                          <Progress value={student.progress} className="w-32" />
-                          <p className="text-xs text-gray-500 mt-1">
-                            Reports: {student.reportsSubmitted}/{student.totalReports}
-                          </p>
+                              {/* Internship Details */}
+                              {student.company && (
+                                <div>
+                                  <h4 className="font-semibold text-sm sm:text-base mb-3 flex items-center gap-2">
+                                    <Building className="w-4 h-4" />
+                                    Internship Details
+                                  </h4>
+                                  <div className="bg-gray-50 rounded-lg p-3 space-y-2 text-sm">
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                      <div className="flex justify-between">
+                                        <span className="font-medium text-gray-700">Company:</span>
+                                        <span className="text-gray-900">{student.company}</span>
+                                      </div>
+                                      <div className="flex justify-between">
+                                        <span className="font-medium text-gray-700">Position:</span>
+                                        <span className="text-gray-900">{student.position}</span>
+                                      </div>
+                                      <div className="flex justify-between">
+                                        <span className="font-medium text-gray-700">Supervisor:</span>
+                                        <span className="text-gray-900">{student.supervisor}</span>
+                                      </div>
+                                      <div className="flex justify-between">
+                                        <span className="font-medium text-gray-700">Status:</span>
+                                        <Badge className={getStatusColor(student.status)}>
+                                          {student.status}
+                                        </Badge>
+                                      </div>
+                                    </div>
+                                    <div className="flex items-center gap-4 text-xs text-gray-500 pt-2 border-t">
+                                      <div className="flex items-center gap-1">
+                                        <Calendar className="w-3 h-3" />
+                                        <span>Start: {student.startDate ? new Date(student.startDate).toLocaleDateString() : 'N/A'}</span>
+                                      </div>
+                                      <div className="flex items-center gap-1">
+                                        <Calendar className="w-3 h-3" />
+                                        <span>End: {student.endDate ? new Date(student.endDate).toLocaleDateString() : 'N/A'}</span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Progress Overview */}
+                              <div>
+                                <h4 className="font-semibold text-sm sm:text-base mb-3 flex items-center gap-2">
+                                  <TrendingUp className="w-4 h-4" />
+                                  Progress Overview
+                                </h4>
+                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
+                                  <div className="bg-blue-50 rounded-lg p-3 text-center">
+                                    <div className="text-xl sm:text-2xl font-bold text-blue-600">{student.progress}%</div>
+                                    <p className="text-xs text-blue-700 mt-1">Overall Progress</p>
+                                  </div>
+                                  <div className="bg-green-50 rounded-lg p-3 text-center">
+                                    <div className="text-xl sm:text-2xl font-bold text-green-600">{student.reportsSubmitted}</div>
+                                    <p className="text-xs text-green-700 mt-1">Submitted</p>
+                                  </div>
+                                  <div className="bg-purple-50 rounded-lg p-3 text-center">
+                                    <div className="text-xl sm:text-2xl font-bold text-purple-600">{student.totalReports}</div>
+                                    <p className="text-xs text-purple-700 mt-1">Required</p>
+                                  </div>
+                                  <div className="bg-orange-50 rounded-lg p-3 text-center">
+                                    <div className="text-xl sm:text-2xl font-bold text-orange-600">{student.certificates}</div>
+                                    <p className="text-xs text-orange-700 mt-1">Certificates</p>
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Additional Statistics */}
+                              {studentDetails?.stats && (
+                                <div>
+                                  <h4 className="font-semibold text-sm sm:text-base mb-3 flex items-center gap-2">
+                                    <FileText className="w-4 h-4" />
+                                    Detailed Statistics
+                                  </h4>
+                                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 text-sm">
+                                    <div className="bg-blue-50 p-3 rounded-lg">
+                                      <div className="font-semibold text-blue-700 text-base">{studentDetails.stats.totalApplications}</div>
+                                      <div className="text-blue-600 text-xs">Applications</div>
+                                    </div>
+                                    <div className="bg-yellow-50 p-3 rounded-lg">
+                                      <div className="font-semibold text-yellow-700 text-base">{studentDetails.stats.pendingReports}</div>
+                                      <div className="text-yellow-600 text-xs">Pending</div>
+                                    </div>
+                                    <div className="bg-green-50 p-3 rounded-lg">
+                                      <div className="font-semibold text-green-700 text-base">{studentDetails.stats.approvedReports}</div>
+                                      <div className="text-green-600 text-xs">Approved</div>
+                                    </div>
+                                    <div className="bg-purple-50 p-3 rounded-lg">
+                                      <div className="font-semibold text-purple-700 text-base">{studentDetails.stats.totalCertificates}</div>
+                                      <div className="text-purple-600 text-xs">Total Certs</div>
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Last Activity */}
+                              <div className="text-xs text-gray-500 flex items-center gap-1 pt-2 border-t">
+                                <Calendar className="w-3 h-3" />
+                                <span>Last activity: {new Date(student.lastActivity).toLocaleDateString()}</span>
+                              </div>
+                            </>
+                          )}
                         </div>
-                        <p className="text-xs text-gray-500">
-                          Last activity: {new Date(student.lastActivity).toLocaleDateString()}
-                        </p>
-                      </div>
-
-                      {/* Actions */}
-                      <div className="flex flex-col gap-2">
-                        <Button 
-                          variant="outline" 
-                          size="sm"
-                          onClick={() => handleViewStudent(student)}
-                          className="flex-1 lg:flex-none"
-                        >
-                          <Eye className="w-4 h-4 mr-1" />
-                          View Details
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleSendMessage(student)}
-                          className="flex-1 lg:flex-none"
-                        >
-                          <MessageSquare className="w-4 h-4 mr-1" />
-                          Send Message
-                        </Button>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))
+                      )}
+                    </CardContent>
+                  </Card>
+                )
+              })
             )}
           </div>
-
-          {/* Student Details Dialog */}
-          <Dialog open={showStudentDialog} onOpenChange={setShowStudentDialog}>
-            <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
-              <DialogHeader>
-                <div className="flex items-center gap-3">
-                  {selectedStudent && (
-                    <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-semibold ${getGradientAvatar(selectedStudent.name, 0)}`}>
-                      {selectedStudent.name
-                        .split(" ")
-                        .map((n) => n[0])
-                        .join("")}
-                    </div>
-                  )}
-                  <div>
-                    <DialogTitle>{selectedStudent?.name} - Detailed View</DialogTitle>
-                    <DialogDescription>
-                      Complete information about the student's internship progress
-                    </DialogDescription>
-                  </div>
-                </div>
-              </DialogHeader>
-
-              {loadingDetails ? (
-                <div className="flex items-center justify-center py-8">
-                  <Loader2 className="h-6 w-6 animate-spin mr-2" />
-                  <span>Loading student details...</span>
-                </div>
-              ) : (
-                selectedStudent && (
-                  <div className="space-y-6">
-                    {/* Personal Information */}
-                    <div>
-                      <h3 className="text-lg font-semibold mb-3">Personal Information</h3>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div className="space-y-2">
-                          <div className="flex justify-between">
-                            <span className="font-medium">Name:</span>
-                            <span>{selectedStudent.name}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="font-medium">Roll Number:</span>
-                            <span>{selectedStudent.rollNumber}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="font-medium">Department:</span>
-                            <span>{selectedStudent.department}</span>
-                          </div>
-                        </div>
-                        <div className="space-y-2">
-                          <div className="flex justify-between">
-                            <span className="font-medium">Email:</span>
-                            <span>{selectedStudent.email}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="font-medium">Phone:</span>
-                            <span>{selectedStudent.phone}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="font-medium">CGPA:</span>
-                            <span>{selectedStudent.cgpa}</span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Internship Details */}
-                    {selectedStudent.company && (
-                      <div>
-                        <h3 className="text-lg font-semibold mb-3">Internship Details</h3>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          <div className="space-y-2">
-                            <div className="flex justify-between">
-                              <span className="font-medium">Company:</span>
-                              <span>{selectedStudent.company}</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="font-medium">Position:</span>
-                              <span>{selectedStudent.position}</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="font-medium">Supervisor:</span>
-                              <span>{selectedStudent.supervisor}</span>
-                            </div>
-                          </div>
-                          <div className="space-y-2">
-                            <div className="flex justify-between">
-                              <span className="font-medium">Start Date:</span>
-                              <span>{selectedStudent.startDate ? new Date(selectedStudent.startDate).toLocaleDateString() : 'N/A'}</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="font-medium">End Date:</span>
-                              <span>{selectedStudent.endDate ? new Date(selectedStudent.endDate).toLocaleDateString() : 'N/A'}</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="font-medium">Status:</span>
-                              <Badge className={getStatusColor(selectedStudent.status)}>
-                                {selectedStudent.status}
-                              </Badge>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Progress Overview */}
-                    <div>
-                      <h3 className="text-lg font-semibold mb-3">Progress Overview</h3>
-                      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                        <Card>
-                          <CardContent className="p-4 text-center">
-                            <div className="text-2xl font-bold text-blue-600">{selectedStudent.progress}%</div>
-                            <p className="text-sm text-gray-600">Overall Progress</p>
-                          </CardContent>
-                        </Card>
-                        <Card>
-                          <CardContent className="p-4 text-center">
-                            <div className="text-2xl font-bold text-green-600">{selectedStudent.reportsSubmitted}</div>
-                            <p className="text-sm text-gray-600">Reports Submitted</p>
-                          </CardContent>
-                        </Card>
-                        <Card>
-                          <CardContent className="p-4 text-center">
-                            <div className="text-2xl font-bold text-purple-600">{selectedStudent.totalReports}</div>
-                            <p className="text-sm text-gray-600">Total Reports Required</p>
-                          </CardContent>
-                        </Card>
-                        <Card>
-                          <CardContent className="p-4 text-center">
-                            <div className="text-2xl font-bold text-orange-600">{selectedStudent.certificates}</div>
-                            <p className="text-sm text-gray-600">Certificates</p>
-                          </CardContent>
-                        </Card>
-                      </div>
-                    </div>
-
-                    {/* Additional Statistics from studentDetails */}
-                    {studentDetails?.stats && (
-                      <div>
-                        <h3 className="text-lg font-semibold mb-3">Detailed Statistics</h3>
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                          <div className="bg-blue-50 p-3 rounded-lg">
-                            <div className="font-semibold text-blue-700">{studentDetails.stats.totalApplications}</div>
-                            <div className="text-blue-600">Applications</div>
-                          </div>
-                          <div className="bg-yellow-50 p-3 rounded-lg">
-                            <div className="font-semibold text-yellow-700">{studentDetails.stats.pendingReports}</div>
-                            <div className="text-yellow-600">Pending Reviews</div>
-                          </div>
-                          <div className="bg-green-50 p-3 rounded-lg">
-                            <div className="font-semibold text-green-700">{studentDetails.stats.approvedReports}</div>
-                            <div className="text-green-600">Approved Reports</div>
-                          </div>
-                          <div className="bg-purple-50 p-3 rounded-lg">
-                            <div className="font-semibold text-purple-700">{studentDetails.stats.totalCertificates}</div>
-                            <div className="text-purple-600">Total Certificates</div>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )
-              )}
-            </DialogContent>
-          </Dialog>
-
-          {/* Send Message Dialog */}
-          <Dialog open={showMessageDialog} onOpenChange={setShowMessageDialog}>
-            <DialogContent className="sm:max-w-md">
-              <DialogHeader>
-                <DialogTitle>Send Message to {selectedStudent?.name}</DialogTitle>
-                <DialogDescription>
-                  Send a message or feedback to the student
-                </DialogDescription>
-              </DialogHeader>
-              <div className="space-y-4">
-                <div>
-                  <Label htmlFor="message">Message</Label>
-                  <Textarea
-                    id="message"
-                    placeholder="Type your message here..."
-                    value={messageText}
-                    onChange={(e) => setMessageText(e.target.value)}
-                    rows={5}
-                  />
-                </div>
-                <div className="flex flex-col sm:flex-row gap-2">
-                  <Button 
-                    variant="outline" 
-                    onClick={() => setShowMessageDialog(false)} 
-                    className="w-full sm:w-auto"
-                    disabled={sendingMessage}
-                  >
-                    Cancel
-                  </Button>
-                  <Button 
-                    onClick={handleSendMessageSubmit} 
-                    className="w-full sm:w-auto"
-                    disabled={sendingMessage || !messageText.trim()}
-                  >
-                    {sendingMessage ? (
-                      <>
-                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                        Sending...
-                      </>
-                    ) : (
-                      <>
-                        <Send className="w-4 h-4 mr-2" />
-                        Send Message
-                      </>
-                    )}
-                  </Button>
-                </div>
-              </div>
-            </DialogContent>
-          </Dialog>
         </div>
       </DashboardLayout>
     </AuthGuard>
