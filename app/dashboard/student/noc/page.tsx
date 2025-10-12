@@ -44,6 +44,8 @@ import {
   Filter,
   DollarSign,
   CalendarDays,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react"
 
 // Dialog components
@@ -68,7 +70,7 @@ type NOCRequest = {
   status: "approved" | "pending" | "rejected" | string
   description: string
   feedback?: string
-  documents?: string[] // paths or URLs
+  documents?: string[]
   studentName?: string
   studentEmail?: string
   rollNumber?: string
@@ -324,18 +326,18 @@ function UploadZone({
   )
 }
 
-// Enhanced NOC Card Component
+// Enhanced NOC Card Component with expandable design
 function NOCCard({
   request,
   currentUser,
-  onView,
-  onEdit,
+  isExpanded,
+  onToggle,
   onDownloadNOC,
 }: {
   request: NOCRequest
   currentUser: any
-  onView: () => void
-  onEdit: () => void
+  isExpanded: boolean
+  onToggle: () => void
   onDownloadNOC: () => void
 }) {
   const meta = prettyStatus(request.status)
@@ -343,267 +345,142 @@ function NOCCard({
   const duration = calculateDuration(request.startDate, request.endDate)
 
   return (
-    <Card
-      className="group hover:shadow-lg transition-all duration-200 border-0 shadow-sm cursor-pointer"
-      onClick={onView}
-    >
-      <CardContent className="p-6">
-        <div className="flex items-start justify-between mb-4">
-          <div className="flex items-center gap-3">
-            <div className="h-12 w-12 rounded-xl bg-blue-100 flex items-center justify-center">
-              <Building className="h-6 w-6 text-blue-600" />
+    <Card className="group hover:shadow-lg transition-all duration-200 border-0 shadow-sm">
+      {/* Minimal View - Always Visible */}
+      <CardContent className="p-4 sm:p-6">
+        <div 
+          className="cursor-pointer"
+          onClick={onToggle}
+        >
+          <div className="flex items-start justify-between mb-3">
+            <div className="flex items-center gap-3 flex-1 min-w-0">
+              <div className="h-10 w-10 sm:h-12 sm:w-12 rounded-xl bg-blue-100 flex items-center justify-center flex-shrink-0">
+                <Building className="h-5 w-5 sm:h-6 sm:w-6 text-blue-600" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <h3 className="text-base sm:text-lg font-semibold text-gray-900 group-hover:text-blue-600 transition-colors truncate">
+                  {request.company}
+                </h3>
+                <p className="text-xs sm:text-sm text-gray-600 truncate">{request.position}</p>
+              </div>
             </div>
-            <div>
-              <h3 className="text-lg font-semibold text-gray-900 group-hover:text-blue-600 transition-colors">
-                {request.company}
-              </h3>
-              <p className="text-sm text-gray-600">{request.position}</p>
+
+            <div className="flex items-center gap-2 flex-shrink-0 ml-2">
+              <span
+                className={cn(
+                  "inline-flex items-center gap-1 text-xs font-medium px-2 py-1 sm:px-3 sm:py-1.5 rounded-full",
+                  meta.chipClass,
+                )}
+              >
+                <StatusIcon className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
+                <span className="hidden sm:inline">{meta.label}</span>
+              </span>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <span
-              className={cn(
-                "inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full",
-                meta.chipClass,
-              )}
-            >
-              <StatusIcon className="h-3.5 w-3.5" />
-              {meta.label}
-            </span>
-          </div>
-        </div>
-
-        <div className="space-y-3">
-          <p className="text-sm text-gray-700 line-clamp-2">{request.description}</p>
-
-          <div className="flex flex-wrap gap-2">
-            <div className="inline-flex items-center gap-1.5 text-xs bg-indigo-50 text-indigo-700 px-2.5 py-1 rounded-md">
-              <CalendarDays className="h-3 w-3" />
-              {duration}
+          <div className="flex flex-wrap gap-2 mb-3">
+            <div className="inline-flex items-center gap-1 text-xs bg-indigo-50 text-indigo-700 px-2 py-1 rounded-md">
+              <CalendarDays className="h-3 w-3 flex-shrink-0" />
+              <span>{duration}</span>
             </div>
-            <div className="inline-flex items-center gap-1.5 text-xs bg-blue-50 text-blue-700 px-2.5 py-1 rounded-md">
-              <Calendar className="h-3 w-3" />
-              {new Date(request.startDate).toLocaleDateString()}
+            <div className="inline-flex items-center gap-1 text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded-md">
+              <Calendar className="h-3 w-3 flex-shrink-0" />
+              <span>{new Date(request.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
             </div>
             {request.stipend && (
-              <div className="inline-flex items-center gap-1.5 text-xs bg-green-50 text-green-700 px-2.5 py-1 rounded-md">
-                <DollarSign className="h-3 w-3" />
-                {request.stipend}
-              </div>
-            )}
-            {request.documents && request.documents.length > 0 && (
-              <div className="inline-flex items-center gap-1.5 text-xs bg-gray-50 text-gray-700 px-2.5 py-1 rounded-md">
-                <FileText className="h-3 w-3" />
-                {request.documents.length} Document{request.documents.length > 1 ? "s" : ""}
+              <div className="inline-flex items-center gap-1 text-xs bg-green-50 text-green-700 px-2 py-1 rounded-md">
+                <DollarSign className="h-3 w-3 flex-shrink-0" />
+                <span>{request.stipend}</span>
               </div>
             )}
           </div>
 
-          <div className="flex items-center justify-between pt-2 border-t">
+          <div className="flex items-center justify-between">
             <span className="text-xs text-gray-500">
-              Submitted {new Date(request.submittedDate).toLocaleDateString()}
+              {new Date(request.submittedDate).toLocaleDateString()}
             </span>
-
-            <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={onEdit}
-                disabled={request.status === "approved"}
-                className="h-8 px-3 text-xs bg-transparent"
-              >
-                <Pencil className="h-3 w-3 mr-1" />
-                Edit
-              </Button>
-              <Button size="sm" onClick={onView} className="h-8 px-3 text-xs">
-                <Eye className="h-3 w-3 mr-1" />
-                View
-              </Button>
-              {request.status === "approved" && (
-                <Button 
-                  size="sm" 
-                  onClick={onDownloadNOC} 
-                  className="h-8 px-3 text-xs bg-emerald-600 hover:bg-emerald-700"
-                >
-                  <Download className="h-3 w-3 mr-1" />
-                  NOC
-                </Button>
-              )}
+            <div className="flex items-center gap-1 text-blue-600">
+              <span className="text-xs font-medium">{isExpanded ? 'Less' : 'More'}</span>
+              {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
             </div>
           </div>
         </div>
 
-        {request.feedback && (
-          <div className="mt-4 p-3 rounded-lg bg-amber-50 border border-amber-200">
-            <p className="text-xs font-medium text-amber-800 mb-1">Feedback</p>
-            <p className="text-xs text-amber-700">{request.feedback}</p>
+        {/* Expanded View - Details */}
+        {isExpanded && (
+          <div className="mt-4 pt-4 border-t space-y-4" onClick={(e) => e.stopPropagation()}>
+            {/* Description */}
+            <div className="space-y-2">
+              <Label className="text-sm font-medium text-gray-900">Description</Label>
+              <p className="text-sm text-gray-700 whitespace-pre-wrap">{request.description}</p>
+            </div>
+
+            {/* Details Grid */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="p-3 rounded-lg bg-blue-50 border border-blue-200">
+                <p className="text-xs font-medium text-blue-900 mb-1">Start Date</p>
+                <p className="text-sm text-blue-800">{new Date(request.startDate).toLocaleDateString()}</p>
+              </div>
+              <div className="p-3 rounded-lg bg-green-50 border border-green-200">
+                <p className="text-xs font-medium text-green-900 mb-1">End Date</p>
+                <p className="text-sm text-green-800">{new Date(request.endDate).toLocaleDateString()}</p>
+              </div>
+            </div>
+
+            {/* Feedback */}
+            {request.feedback && (
+              <div className="p-3 rounded-lg bg-amber-50 border border-amber-200">
+                <p className="text-xs font-medium text-amber-800 mb-1">Feedback</p>
+                <p className="text-xs text-amber-700">{request.feedback}</p>
+              </div>
+            )}
+
+            {/* Documents */}
+            {request.documents && request.documents.length > 0 && (
+              <div className="space-y-2">
+                <Label className="text-sm font-medium text-gray-900">Documents</Label>
+                {request.documents.map((doc, index) => (
+                  <div key={index} className="flex items-center justify-between p-2 border rounded-lg bg-gray-50">
+                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                      <FileText className="h-4 w-4 text-red-600 flex-shrink-0" />
+                      <span className="text-xs text-gray-900 truncate">Document {index + 1}</span>
+                    </div>
+                    <Button 
+                      variant="ghost" 
+                      size="sm" 
+                      onClick={() => window.open(doc, "_blank")}
+                      className="h-7 px-2 flex-shrink-0"
+                    >
+                      <ExternalLink className="h-3 w-3" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Action Button */}
+            <div className="pt-2">
+              {request.status === "approved" ? (
+                <Button 
+                  onClick={onDownloadNOC} 
+                  className="w-full bg-emerald-600 hover:bg-emerald-700"
+                  size="sm"
+                >
+                  <Download className="h-4 w-4 mr-2" />
+                  Download NOC Certificate
+                </Button>
+              ) : (
+                <div className="text-center py-2">
+                  <p className="text-xs text-gray-500">
+                    {request.status === "pending" ? "Awaiting approval from T&P Officer" : "Request was rejected"}
+                  </p>
+                </div>
+              )}
+            </div>
           </div>
         )}
       </CardContent>
     </Card>
-  )
-}
-
-// Enhanced Edit Form Component
-function EditForm({
-  request,
-  onCancel,
-  onSave,
-}: {
-  request: NOCRequest
-  onCancel: () => void
-  onSave: (updates: Partial<NOCRequest>) => void
-}) {
-  const [company, setCompany] = useState(request.company)
-  const [position, setPosition] = useState(request.position)
-  const [startDate, setStartDate] = useState(() => (request.startDate || "").slice(0, 10))
-  const [endDate, setEndDate] = useState(() => (request.endDate || "").slice(0, 10))
-  const [stipend, setStipend] = useState(request.stipend || "")
-  const [description, setDescription] = useState(request.description)
-  const [isSaving, setIsSaving] = useState(false)
-
-  const isDisabled = request.status === "approved"
-
-  const handleSave = async () => {
-    setIsSaving(true)
-
-    try {
-      const updates = {
-        company,
-        position,
-        startDate,
-        endDate,
-        stipend,
-        description,
-      }
-
-      await onSave(updates)
-    } catch (error) {
-      console.error("Error saving updates:", error)
-    } finally {
-      setIsSaving(false)
-    }
-  }
-
-  return (
-    <div className="space-y-6">
-      {isDisabled && (
-        <div className="p-4 rounded-lg bg-emerald-50 border border-emerald-200">
-          <div className="flex items-center gap-2">
-            <CheckCircle2 className="h-5 w-5 text-emerald-600" />
-            <p className="text-sm font-medium text-emerald-900">This request has been approved and cannot be edited.</p>
-          </div>
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="space-y-2">
-          <Label htmlFor="edit-company" className="text-sm font-medium text-gray-700">
-            Company Name
-          </Label>
-          <Input
-            id="edit-company"
-            value={company}
-            onChange={(e) => setCompany(e.target.value)}
-            disabled={isDisabled}
-            className="rounded-lg border-gray-300"
-          />
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="edit-position" className="text-sm font-medium text-gray-700">
-            Position
-          </Label>
-          <Input
-            id="edit-position"
-            value={position}
-            onChange={(e) => setPosition(e.target.value)}
-            disabled={isDisabled}
-            className="rounded-lg border-gray-300"
-          />
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="edit-startDate" className="text-sm font-medium text-gray-700">
-            Start Date
-          </Label>
-          <Input
-            id="edit-startDate"
-            type="date"
-            value={startDate}
-            onChange={(e) => setStartDate(e.target.value)}
-            disabled={isDisabled}
-            className="rounded-lg border-gray-300"
-          />
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="edit-endDate" className="text-sm font-medium text-gray-700">
-            End Date
-          </Label>
-          <Input
-            id="edit-endDate"
-            type="date"
-            value={endDate}
-            onChange={(e) => setEndDate(e.target.value)}
-            disabled={isDisabled}
-            className="rounded-lg border-gray-300"
-          />
-        </div>
-
-        <div className="space-y-2 md:col-span-2">
-          <Label htmlFor="edit-stipend" className="text-sm font-medium text-gray-700">
-            Stipend (Optional)
-          </Label>
-          <Input
-            id="edit-stipend"
-            value={stipend}
-            onChange={(e) => setStipend(e.target.value)}
-            placeholder="e.g., ₹15,000/month or Unpaid"
-            disabled={isDisabled}
-            className="rounded-lg border-gray-300"
-          />
-        </div>
-      </div>
-
-      <div className="space-y-2">
-        <Label htmlFor="edit-description" className="text-sm font-medium text-gray-700">
-          Job Description
-        </Label>
-        <Textarea
-          id="edit-description"
-          rows={4}
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          disabled={isDisabled}
-          className="rounded-lg border-gray-300"
-        />
-      </div>
-
-      <div className="flex justify-end gap-3 pt-4 border-t">
-        <Button variant="outline" onClick={onCancel} className="rounded-lg px-6 bg-transparent">
-          Cancel
-        </Button>
-        <Button
-          onClick={handleSave}
-          disabled={isSaving || isDisabled}
-          className="rounded-lg px-6 bg-blue-600 hover:bg-blue-700"
-        >
-          {isSaving ? (
-            <>
-              <Clock className="mr-2 h-4 w-4 animate-spin" />
-              Saving...
-            </>
-          ) : (
-            <>
-              <CheckCircle2 className="mr-2 h-4 w-4" />
-              Save Changes
-            </>
-          )}
-        </Button>
-      </div>
-    </div>
   )
 }
 
@@ -612,12 +489,11 @@ export default function NOCRequests() {
   const [nocRequests, setNocRequests] = useState<NOCRequest[]>([])
   const [filteredRequests, setFilteredRequests] = useState<NOCRequest[]>([])
   const [searchTerm, setSearchTerm] = useState("")
-  const [statusFilter, setStatusFilter] = useState<string>("all")
+  const [statusFilter, setStatusFilter] = useState<string>("pending")
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [submitProgress, setSubmitProgress] = useState("")
   const [selectedFiles, setSelectedFiles] = useState<File[]>([])
-  const [viewing, setViewing] = useState<NOCRequest | null>(null)
-  const [editing, setEditing] = useState<NOCRequest | null>(null)
+  const [expandedCards, setExpandedCards] = useState<Set<number>>(new Set())
   const [currentUser, setCurrentUser] = useState<any>(null)
   const [isDownloading, setIsDownloading] = useState(false)
   const { toast } = useToast()
@@ -673,36 +549,6 @@ export default function NOCRequests() {
     loadData()
   }, [])
 
-  useEffect(() => {
-    const loadNOCRequests = async () => {
-      if (!currentUser?.id) {
-        console.log("[v0] No current user, skipping NOC requests fetch")
-        return
-      }
-
-      try {
-        setIsLoading(true)
-        console.log("[v0] Loading NOC requests for user:", currentUser.id)
-
-        const requests = await getNOCRequestsByStudent(currentUser.id)
-        console.log("[v0] Loaded NOC requests:", requests?.length || 0)
-
-        setNocRequests(requests || [])
-      } catch (error) {
-        console.error("[v0] Error loading NOC requests:", error)
-        toast({
-          title: "Error Loading Requests",
-          description: "Failed to load your NOC requests. Please refresh the page.",
-          variant: "destructive",
-        })
-      } finally {
-        setIsLoading(false)
-      }
-    }
-
-    loadNOCRequests()
-  }, [currentUser?.id])
-
   // Filter requests based on search and status
   useEffect(() => {
     let filtered = nocRequests
@@ -734,6 +580,19 @@ export default function NOCRequests() {
     setShowForm(false)
   }, [])
 
+  // Toggle card expansion
+  const toggleCard = (id: number) => {
+    setExpandedCards(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(id)) {
+        newSet.delete(id)
+      } else {
+        newSet.add(id)
+      }
+      return newSet
+    })
+  }
+
   // Handle NOC Certificate Download
   const handleDownloadNOC = async (request: NOCRequest) => {
     if (!currentUser) {
@@ -757,10 +616,8 @@ export default function NOCRequests() {
     setIsDownloading(true)
 
     try {
-      // Generate certificate number if not exists
       const certificateNumber = generateNOCCertificateNumber()
 
-      // Prepare NOC certificate data
       const nocData: NOCCertificateData = {
         student: {
           name: request.studentName || currentUser.name || "Unknown Student",
@@ -784,16 +641,12 @@ export default function NOCRequests() {
         },
       }
 
-      console.log("[v0] Generating NOC certificate with data:", nocData)
-
-      // Generate and download PDF
       const result = await generateAndDownloadNOCPDF(nocData)
 
       if (!result.success) {
         throw new Error(result.error || "Failed to generate NOC certificate")
       }
 
-      // Create download link
       if (result.pdfBlob && result.fileName) {
         const url = window.URL.createObjectURL(result.pdfBlob)
         const link = document.createElement("a")
@@ -811,7 +664,7 @@ export default function NOCRequests() {
       }
 
     } catch (error: any) {
-      console.error("[v0] Error downloading NOC certificate:", error)
+      console.error("Error downloading NOC certificate:", error)
       toast({
         title: "Download Failed",
         description: error.message || "Failed to download NOC certificate. Please try again.",
@@ -825,8 +678,6 @@ export default function NOCRequests() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     e.stopPropagation()
-
-    console.log("[v0] NOC form submission started")
 
     if (!currentUser) {
       toast({
@@ -857,9 +708,6 @@ export default function NOCRequests() {
         documents: [] as string[],
       }
 
-      console.log("[v0] Form data prepared:", requestData)
-
-      // Validate required fields
       if (
         !requestData.company ||
         !requestData.position ||
@@ -870,14 +718,12 @@ export default function NOCRequests() {
         throw new Error("Please fill in all required fields")
       }
 
-      // Validate dates
       const startDate = new Date(requestData.startDate)
       const endDate = new Date(requestData.endDate)
       if (endDate <= startDate) {
         throw new Error("End date must be after start date")
       }
 
-      // Handle optional file upload
       let fileUrl = null
       if (selectedFiles.length > 0) {
         const file = selectedFiles[0]
@@ -891,7 +737,6 @@ export default function NOCRequests() {
         }
 
         setSubmitProgress(`⚡ Uploading ${file.name}...`)
-        console.log("[v0] Starting file upload")
 
         const uploadResult = await uploadFile(file, "noc-documents")
 
@@ -901,15 +746,11 @@ export default function NOCRequests() {
 
         fileUrl = uploadResult.fileUrl
         requestData.documents = [fileUrl]
-        console.log("[v0] File uploaded successfully:", fileUrl)
       } else {
-        console.log("[v0] No documents to upload, proceeding without files")
         requestData.documents = []
       }
 
-      // Create NOC request
       setSubmitProgress("📝 Creating request...")
-      console.log("[v0] Creating NOC request")
 
       const newRequest = await createNOCRequest(requestData)
 
@@ -918,7 +759,6 @@ export default function NOCRequests() {
       }
 
       const totalTime = Date.now() - startTime
-      console.log("[v0] NOC request created successfully in", totalTime, "ms")
 
       const normalized: NOCRequest = {
         id: newRequest.id,
@@ -945,21 +785,19 @@ export default function NOCRequests() {
 
       toast({
         title: "✅ Success!",
-        description: `NOC request submitted successfully in ${(totalTime / 1000).toFixed(1)}s. Now under review by T&P Officer.`,
+        description: `NOC request submitted successfully in ${(totalTime / 1000).toFixed(1)}s.`,
       })
 
-      // Refresh data after successful submission
       setTimeout(async () => {
         try {
           const updatedRequests = await getNOCRequestsByStudent(currentUser.id)
           setNocRequests(updatedRequests || [])
         } catch (error) {
-          console.error("[v0] Error refreshing NOC requests:", error)
+          console.error("Error refreshing NOC requests:", error)
         }
       }, 1000)
     } catch (error: any) {
       const totalTime = Date.now() - startTime
-      console.error("[v0] NOC submission failed after", totalTime, "ms:", error)
 
       let errorMessage = "Submission failed. Please try again."
       const errorMsg = (error.message || "").toLowerCase()
@@ -987,149 +825,163 @@ export default function NOCRequests() {
     }
   }
 
-  // Open document viewer
-  const openDocument = async (documentUrl: string) => {
-    try {
-      window.open(documentUrl, "_blank", "noopener,noreferrer")
-    } catch (error) {
-      toast({
-        title: "Cannot open document",
-        description: "Unable to open the document. Please try again.",
-        variant: "destructive",
-      })
-    }
-  }
-
   return (
     <AuthGuard allowedRoles={["student"]}>
       <DashboardLayout>
-        <div className="space-y-8">
+        <div className="space-y-6 sm:space-y-8">
           {/* Header Section */}
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
-              <h1 className="text-3xl font-bold text-gray-900">NOC Requests</h1>
-              <p className="text-gray-600 mt-1">
-                Manage your No Objection Certificate requests for external internships
+              <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">NOC Requests</h1>
+              <p className="text-sm sm:text-base text-gray-600 mt-1">
+                Manage your No Objection Certificate requests
               </p>
             </div>
             <Button
               onClick={() => setShowForm(!showForm)}
-              className="rounded-xl px-6 py-2.5 bg-blue-600 hover:bg-blue-700 transition-colors"
+              className="rounded-xl px-4 sm:px-6 py-2.5 bg-blue-600 hover:bg-blue-700 transition-colors w-full sm:w-auto"
             >
               <Plus className="mr-2 h-4 w-4" />
               New NOC Request
             </Button>
           </div>
 
-          {/* Search and Filter Section */}
-          <div className="flex flex-col sm:flex-row gap-4">
+          {/* Search and Filter Section - Horizontal on Mobile */}
+          <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
             <div className="flex-1">
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
                 <Input
-                  placeholder="Search by company name or position..."
+                  placeholder="Search company or position..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="pl-10 rounded-lg border-gray-300"
                 />
               </div>
             </div>
-            <div className="flex gap-2">
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-[140px] rounded-lg border-gray-300">
-                  <Filter className="h-4 w-4 mr-2" />
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Status</SelectItem>
-                  <SelectItem value="pending">Pending</SelectItem>
-                  <SelectItem value="approved">Approved</SelectItem>
-                  <SelectItem value="rejected">Rejected</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="w-full sm:w-[160px] rounded-lg border-gray-300">
+                <Filter className="h-4 w-4 mr-2" />
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Status</SelectItem>
+                <SelectItem value="pending">Pending</SelectItem>
+                <SelectItem value="approved">Approved</SelectItem>
+                <SelectItem value="rejected">Rejected</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
 
-          {/* Stats Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <Card className="border-0 shadow-sm bg-gradient-to-r from-blue-50 to-blue-100">
-              <CardContent className="p-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-blue-700">Total Requests</p>
-                    <p className="text-2xl font-bold text-blue-900">{nocRequests.length}</p>
+          {/* Stats Cards - Horizontal Scroll on Mobile */}
+          <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
+            <div className="flex sm:grid sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 min-w-max sm:min-w-0">
+              <Card 
+                className="border-0 shadow-sm bg-gradient-to-r from-blue-50 to-blue-100 cursor-pointer hover:shadow-md transition-shadow min-w-[200px] sm:min-w-0"
+                onClick={() => setStatusFilter("all")}
+              >
+                <CardContent className="p-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-blue-700">Total</p>
+                      <p className="text-2xl font-bold text-blue-900">{nocRequests.length}</p>
+                    </div>
+                    <FileText className="h-8 w-8 text-blue-600" />
                   </div>
-                  <FileText className="h-8 w-8 text-blue-600" />
-                </div>
-              </CardContent>
-            </Card>
+                </CardContent>
+              </Card>
 
-            <Card className="border-0 shadow-sm bg-gradient-to-r from-amber-50 to-amber-100">
-              <CardContent className="p-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-amber-700">Pending</p>
-                    <p className="text-2xl font-bold text-amber-900">
-                      {nocRequests.filter((r) => r.status === "pending").length}
-                    </p>
+              <Card 
+                className="border-0 shadow-sm bg-gradient-to-r from-amber-50 to-amber-100 cursor-pointer hover:shadow-md transition-shadow min-w-[200px] sm:min-w-0"
+                onClick={() => setStatusFilter("pending")}
+              >
+                <CardContent className="p-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-amber-700">Pending</p>
+                      <p className="text-2xl font-bold text-amber-900">
+                        {nocRequests.filter((r) => r.status === "pending").length}
+                      </p>
+                    </div>
+                    <Clock className="h-8 w-8 text-amber-600" />
                   </div>
-                  <Clock className="h-8 w-8 text-amber-600" />
-                </div>
-              </CardContent>
-            </Card>
+                </CardContent>
+              </Card>
 
-            <Card className="border-0 shadow-sm bg-gradient-to-r from-emerald-50 to-emerald-100">
-              <CardContent className="p-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-emerald-700">Approved</p>
-                    <p className="text-2xl font-bold text-emerald-900">
-                      {nocRequests.filter((r) => r.status === "approved").length}
-                    </p>
+              <Card 
+                className="border-0 shadow-sm bg-gradient-to-r from-emerald-50 to-emerald-100 cursor-pointer hover:shadow-md transition-shadow min-w-[200px] sm:min-w-0"
+                onClick={() => setStatusFilter("approved")}
+              >
+                <CardContent className="p-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-emerald-700">Approved</p>
+                      <p className="text-2xl font-bold text-emerald-900">
+                        {nocRequests.filter((r) => r.status === "approved").length}
+                      </p>
+                    </div>
+                    <CheckCircle2 className="h-8 w-8 text-emerald-600" />
                   </div>
-                  <CheckCircle2 className="h-8 w-8 text-emerald-600" />
-                </div>
-              </CardContent>
-            </Card>
+                </CardContent>
+              </Card>
 
-            <Card className="border-0 shadow-sm bg-gradient-to-r from-rose-50 to-rose-100">
-              <CardContent className="p-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-rose-700">Rejected</p>
-                    <p className="text-2xl font-bold text-rose-900">
-                      {nocRequests.filter((r) => r.status === "rejected").length}
-                    </p>
+              <Card 
+                className="border-0 shadow-sm bg-gradient-to-r from-rose-50 to-rose-100 cursor-pointer hover:shadow-md transition-shadow min-w-[200px] sm:min-w-0"
+                onClick={() => setStatusFilter("rejected")}
+              >
+                <CardContent className="p-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-rose-700">Rejected</p>
+                      <p className="text-2xl font-bold text-rose-900">
+                        {nocRequests.filter((r) => r.status === "rejected").length}
+                      </p>
+                    </div>
+                    <XCircle className="h-8 w-8 text-rose-600" />
                   </div>
-                  <XCircle className="h-8 w-8 text-rose-600" />
-                </div>
-              </CardContent>
-            </Card>
+                </CardContent>
+              </Card>
+            </div>
           </div>
 
           {/* Create Form */}
           {showForm && (
             <Card className="shadow-lg border-0 bg-white">
-              <CardHeader className="pb-6">
-                <CardTitle className="text-xl text-gray-900">Submit New NOC Request</CardTitle>
-                <CardDescription className="text-gray-600">
-                  Request NOC for an externally secured internship opportunity
+              <CardHeader className="pb-4 sm:pb-6">
+                <CardTitle className="text-lg sm:text-xl text-gray-900">Submit New NOC Request</CardTitle>
+                <CardDescription className="text-sm text-gray-600">
+                  Request NOC for an externally secured internship
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <form onSubmit={handleSubmit} className="space-y-6">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
                     <div className="space-y-2">
                       <Label htmlFor="company" className="text-sm font-medium text-gray-700">
-                        Company Name *
+                        Company Name * (Paste Only)
                       </Label>
                       <Input
                         id="company"
                         name="company"
-                        placeholder="e.g., Google, Microsoft, Amazon"
+                        placeholder="Paste company name here..."
                         required
+                        onKeyDown={(e) => {
+                          if (
+                            e.key === 'Backspace' ||
+                            e.key === 'Delete' ||
+                            e.key === 'Tab' ||
+                            e.key === 'Escape' ||
+                            e.key === 'Enter' ||
+                            (e.ctrlKey && ['a', 'c', 'v', 'x'].includes(e.key.toLowerCase())) ||
+                            (e.metaKey && ['a', 'c', 'v', 'x'].includes(e.key.toLowerCase()))
+                          ) {
+                            return
+                          }
+                          e.preventDefault()
+                        }}
                         className="rounded-lg border-gray-300 focus:border-blue-500"
                       />
+                      <p className="text-xs text-gray-500">Copy and paste the exact company name from your offer letter</p>
                     </div>
 
                     <div className="space-y-2">
@@ -1182,7 +1034,7 @@ export default function NOCRequests() {
                       placeholder="e.g., ₹15,000/month, $500/month, or Unpaid"
                       className="rounded-lg border-gray-300 focus:border-blue-500"
                     />
-                    <p className="text-xs text-gray-500">Leave blank if unpaid or stipend amount is not disclosed</p>
+                    <p className="text-xs text-gray-500">Leave blank if unpaid or amount not disclosed</p>
                   </div>
 
                   <div className="space-y-2">
@@ -1192,7 +1044,7 @@ export default function NOCRequests() {
                     <Textarea
                       id="description"
                       name="description"
-                      placeholder="Describe the internship role, responsibilities, and key learning outcomes..."
+                      placeholder="Describe the role, responsibilities, and learning outcomes..."
                       rows={4}
                       required
                       className="rounded-lg border-gray-300 focus:border-blue-500"
@@ -1203,16 +1055,15 @@ export default function NOCRequests() {
                     <Label className="text-sm font-medium text-gray-700">Supporting Documents (Optional)</Label>
                     <UploadZone onFiles={handleFileSelection} busy={isSubmitting} selectedFiles={selectedFiles} />
                     <p className="text-xs text-gray-500">
-                      Upload offer letter or other supporting documents. This is optional but recommended for faster
-                      processing.
+                      Upload offer letter or supporting documents (optional but recommended)
                     </p>
                   </div>
 
-                  <div className="flex gap-3 pt-4 border-t">
+                  <div className="flex flex-col sm:flex-row gap-3 pt-4 border-t">
                     <Button
                       type="submit"
                       disabled={isSubmitting}
-                      className="rounded-lg px-6 py-2.5 bg-blue-600 hover:bg-blue-700 transition-colors min-w-[160px]"
+                      className="rounded-lg px-6 py-2.5 bg-blue-600 hover:bg-blue-700 transition-colors"
                     >
                       {isSubmitting ? (
                         <div className="flex items-center gap-2">
@@ -1243,13 +1094,13 @@ export default function NOCRequests() {
           )}
 
           {/* NOC Requests List */}
-          <div className="space-y-6">
+          <div className="space-y-4 sm:space-y-6">
             {filteredRequests.length > 0 ? (
               <>
                 <div className="flex items-center justify-between">
-                  <h2 className="text-xl font-semibold text-gray-900">
+                  <h2 className="text-lg sm:text-xl font-semibold text-gray-900">
                     {searchTerm || statusFilter !== "all"
-                      ? `Filtered NOC Requests (${filteredRequests.length})`
+                      ? `Filtered (${filteredRequests.length})`
                       : "Your NOC Requests"}
                   </h2>
                   {(searchTerm || statusFilter !== "all") && (
@@ -1260,36 +1111,35 @@ export default function NOCRequests() {
                         setSearchTerm("")
                         setStatusFilter("all")
                       }}
-                      className="rounded-lg"
+                      className="rounded-lg text-xs sm:text-sm"
                     >
-                      <X className="h-4 w-4 mr-1" />
-                      Clear Filters
+                      <X className="h-3 w-3 sm:h-4 sm:w-4 sm:mr-1" />
+                      <span className="hidden sm:inline">Clear</span>
                     </Button>
                   )}
                 </div>
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 gap-4 sm:gap-6">
                   {filteredRequests.map((request) => (
                     <NOCCard
                       key={request.id}
                       request={request}
                       currentUser={currentUser}
-                      onView={() => setViewing(request)}
-                      onEdit={() => setEditing(request)}
+                      isExpanded={expandedCards.has(request.id)}
+                      onToggle={() => toggleCard(request.id)}
                       onDownloadNOC={() => handleDownloadNOC(request)}
                     />
                   ))}
                 </div>
               </>
             ) : nocRequests.length > 0 ? (
-              // Show "No results" when filtered but has requests
               <Card className="border-0 shadow-sm bg-gray-50">
-                <CardContent className="p-12 text-center">
-                  <div className="mx-auto h-16 w-16 rounded-full bg-gray-200 flex items-center justify-center mb-6">
-                    <Search className="h-8 w-8 text-gray-500" />
+                <CardContent className="p-8 sm:p-12 text-center">
+                  <div className="mx-auto h-12 w-12 sm:h-16 sm:w-16 rounded-full bg-gray-200 flex items-center justify-center mb-4 sm:mb-6">
+                    <Search className="h-6 w-6 sm:h-8 sm:w-8 text-gray-500" />
                   </div>
-                  <h3 className="text-lg font-medium text-gray-900 mb-2">No matching requests</h3>
-                  <p className="text-gray-600 mb-6">
-                    No NOC requests match your current search criteria. Try adjusting your filters.
+                  <h3 className="text-base sm:text-lg font-medium text-gray-900 mb-2">No matching requests</h3>
+                  <p className="text-sm text-gray-600 mb-4 sm:mb-6">
+                    Try adjusting your filters
                   </p>
                   <Button
                     variant="outline"
@@ -1297,27 +1147,26 @@ export default function NOCRequests() {
                       setSearchTerm("")
                       setStatusFilter("all")
                     }}
-                    className="rounded-lg px-6 py-2.5"
+                    className="rounded-lg px-4 sm:px-6 py-2.5"
                   >
                     <X className="mr-2 h-4 w-4" />
-                    Clear All Filters
+                    Clear Filters
                   </Button>
                 </CardContent>
               </Card>
             ) : (
-              // Show "No requests" when no requests at all
               <Card className="border-0 shadow-sm bg-gray-50">
-                <CardContent className="p-12 text-center">
-                  <div className="mx-auto h-16 w-16 rounded-full bg-gray-200 flex items-center justify-center mb-6">
-                    <FileText className="h-8 w-8 text-gray-500" />
+                <CardContent className="p-8 sm:p-12 text-center">
+                  <div className="mx-auto h-12 w-12 sm:h-16 sm:w-16 rounded-full bg-gray-200 flex items-center justify-center mb-4 sm:mb-6">
+                    <FileText className="h-6 w-6 sm:h-8 sm:w-8 text-gray-500" />
                   </div>
-                  <h3 className="text-lg font-medium text-gray-900 mb-2">No NOC requests yet</h3>
-                  <p className="text-gray-600 mb-6">
-                    When you secure an external internship, submit a NOC request for university approval.
+                  <h3 className="text-base sm:text-lg font-medium text-gray-900 mb-2">No NOC requests yet</h3>
+                  <p className="text-sm text-gray-600 mb-4 sm:mb-6">
+                    Submit a NOC request for university approval
                   </p>
-                  <Button onClick={() => setShowForm(true)} className="rounded-lg px-6 py-2.5">
+                  <Button onClick={() => setShowForm(true)} className="rounded-lg px-4 sm:px-6 py-2.5">
                     <Plus className="mr-2 h-4 w-4" />
-                    Create Your First Request
+                    Create First Request
                   </Button>
                 </CardContent>
               </Card>
@@ -1326,219 +1175,17 @@ export default function NOCRequests() {
 
           {/* Loading overlay for download */}
           {isDownloading && (
-            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-              <div className="bg-white rounded-lg p-6 max-w-sm mx-4">
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+              <div className="bg-white rounded-lg p-6 max-w-sm w-full mx-4">
                 <div className="flex items-center gap-3">
                   <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-                  <span className="text-gray-900">Generating NOC Certificate...</span>
+                  <span className="text-gray-900">Generating NOC...</span>
                 </div>
-                <p className="text-sm text-gray-600 mt-2">Please wait while we prepare your certificate.</p>
+                <p className="text-sm text-gray-600 mt-2">Please wait</p>
               </div>
             </div>
           )}
         </div>
-
-        {/* View Details Dialog */}
-        <Dialog open={!!viewing} onOpenChange={(open) => !open && setViewing(null)}>
-          <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle className="text-xl">NOC Request Details</DialogTitle>
-              <DialogDescription>Complete information about your NOC request</DialogDescription>
-            </DialogHeader>
-
-            {viewing && (
-              <div className="space-y-6">
-                {/* Status and Basic Info */}
-                <div className="flex items-start justify-between">
-                  <div>
-                    <h3 className="text-lg font-semibold text-gray-900">{viewing.company}</h3>
-                    <p className="text-gray-600">{viewing.position}</p>
-                  </div>
-                  {(() => {
-                    const meta = prettyStatus(viewing.status)
-                    const Icon = meta.icon
-                    return (
-                      <span
-                        className={cn(
-                          "inline-flex items-center gap-2 text-sm font-medium px-3 py-2 rounded-full",
-                          meta.chipClass,
-                        )}
-                      >
-                        <Icon className="h-4 w-4" />
-                        {meta.label}
-                      </span>
-                    )
-                  })()}
-                </div>
-
-                {/* Details Grid */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="p-4 rounded-lg bg-gray-50 border border-gray-200">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Calendar className="h-4 w-4 text-gray-600" />
-                      <p className="text-sm font-medium text-gray-900">Submitted</p>
-                    </div>
-                    <p className="text-gray-800">{new Date(viewing.submittedDate).toLocaleDateString()}</p>
-                  </div>
-
-                  <div className="p-4 rounded-lg bg-indigo-50 border border-indigo-200">
-                    <div className="flex items-center gap-2 mb-2">
-                      <CalendarDays className="h-4 w-4 text-indigo-600" />
-                      <p className="text-sm font-medium text-indigo-900">Duration</p>
-                    </div>
-                    <p className="text-indigo-800">{calculateDuration(viewing.startDate, viewing.endDate)}</p>
-                  </div>
-
-                  <div className="p-4 rounded-lg bg-blue-50 border border-blue-200">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Calendar className="h-4 w-4 text-blue-600" />
-                      <p className="text-sm font-medium text-blue-900">Start Date</p>
-                    </div>
-                    <p className="text-blue-800">{new Date(viewing.startDate).toLocaleDateString()}</p>
-                  </div>
-
-                  <div className="p-4 rounded-lg bg-green-50 border border-green-200">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Calendar className="h-4 w-4 text-green-600" />
-                      <p className="text-sm font-medium text-green-900">End Date</p>
-                    </div>
-                    <p className="text-green-800">{new Date(viewing.endDate).toLocaleDateString()}</p>
-                  </div>
-
-                  {viewing.stipend && (
-                    <div className="p-4 rounded-lg bg-emerald-50 border border-emerald-200">
-                      <div className="flex items-center gap-2 mb-2">
-                        <DollarSign className="h-4 w-4 text-emerald-600" />
-                        <p className="text-sm font-medium text-emerald-900">Stipend</p>
-                      </div>
-                      <p className="text-emerald-800">{viewing.stipend}</p>
-                    </div>
-                  )}
-
-                  {viewing.approvedDate && (
-                    <div className="p-4 rounded-lg bg-emerald-50 border border-emerald-200">
-                      <div className="flex items-center gap-2 mb-2">
-                        <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-                        <p className="text-sm font-medium text-emerald-900">Approved</p>
-                      </div>
-                      <p className="text-emerald-800">{new Date(viewing.approvedDate).toLocaleDateString()}</p>
-                    </div>
-                  )}
-                </div>
-
-                {/* Job Description */}
-                <div className="space-y-3">
-                  <Label className="text-sm font-medium text-gray-900">Job Description</Label>
-                  <div className="p-4 rounded-lg bg-gray-50 border">
-                    <p className="text-sm text-gray-700 whitespace-pre-wrap">{viewing.description}</p>
-                  </div>
-                </div>
-
-                {/* Feedback */}
-                {viewing.feedback && (
-                  <div className="space-y-3">
-                    <Label className="text-sm font-medium text-gray-900">Review Feedback</Label>
-                    <div className="p-4 rounded-lg bg-amber-50 border border-amber-200">
-                      <p className="text-sm text-amber-800 whitespace-pre-wrap">{viewing.feedback}</p>
-                    </div>
-                  </div>
-                )}
-
-                {/* Documents */}
-                {viewing.documents && viewing.documents.length > 0 && (
-                  <div className="space-y-3">
-                    <Label className="text-sm font-medium text-gray-900">Uploaded Documents</Label>
-                    <div className="space-y-2">
-                      {viewing.documents.map((doc, index) => (
-                        <div key={index} className="flex items-center justify-between p-3 border rounded-lg bg-gray-50">
-                          <div className="flex items-center gap-3">
-                            <div className="h-8 w-8 rounded bg-red-100 flex items-center justify-center">
-                              <FileText className="h-4 w-4 text-red-600" />
-                            </div>
-                            <div>
-                              <p className="text-sm font-medium text-gray-900">
-                                {doc.split("/").pop() || `Document ${index + 1}`}
-                              </p>
-                              <p className="text-xs text-gray-500">PDF Document</p>
-                            </div>
-                          </div>
-                          <Button variant="outline" size="sm" onClick={() => openDocument(doc)} className="rounded-lg">
-                            <ExternalLink className="h-4 w-4 mr-1" />
-                            Open
-                          </Button>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Download NOC Certificate */}
-                {viewing.status === "approved" && (
-                  <div className="p-4 rounded-lg bg-emerald-50 border border-emerald-200">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <h4 className="text-sm font-medium text-emerald-900 mb-1">NOC Certificate Ready</h4>
-                        <p className="text-xs text-emerald-700">Your NOC has been approved and is ready for download</p>
-                      </div>
-                      <Button
-                        variant="outline"
-                        className="border-emerald-300 text-emerald-700 hover:bg-emerald-100 bg-transparent"
-                        onClick={() => {
-                          setViewing(null)
-                          handleDownloadNOC(viewing)
-                        }}
-                        disabled={isDownloading}
-                      >
-                        {isDownloading ? (
-                          <div className="flex items-center gap-2">
-                            <div className="w-4 h-4 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin"></div>
-                            <span>Generating...</span>
-                          </div>
-                        ) : (
-                          <>
-                            <Download className="h-4 w-4 mr-2" />
-                            Download NOC
-                          </>
-                        )}
-                      </Button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setViewing(null)} className="rounded-lg">
-                Close
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-
-        {/* Edit Dialog */}
-        <Dialog open={!!editing} onOpenChange={(open) => !open && setEditing(null)}>
-          <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle className="text-xl">Edit NOC Request</DialogTitle>
-              <DialogDescription>Update the details of your NOC request</DialogDescription>
-            </DialogHeader>
-
-            {editing && (
-              <EditForm
-                request={editing}
-                onCancel={() => setEditing(null)}
-                onSave={(updates) => {
-                  setNocRequests((prev) => prev.map((req) => (req.id === editing.id ? { ...req, ...updates } : req)))
-                  setEditing(null)
-                  toast({
-                    title: "Request Updated",
-                    description: "Your NOC request has been updated successfully.",
-                  })
-                }}
-              />
-            )}
-          </DialogContent>
-        </Dialog>
       </DashboardLayout>
     </AuthGuard>
   )
