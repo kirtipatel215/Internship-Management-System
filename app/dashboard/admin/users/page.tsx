@@ -1,7 +1,7 @@
 "use client"
 
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -9,9 +9,10 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Search, Users, UserPlus, Edit, Trash2, Shield, Mail, Phone, Calendar, AlertCircle, Eye, Loader2 } from "lucide-react"
+import { Checkbox } from "@/components/ui/checkbox"
+import { Search, Users, Edit, Trash2, Mail, Phone, Calendar, AlertCircle, Eye, Loader2, ChevronRight, Shield } from "lucide-react"
 import { useState, useEffect } from "react"
-import { getAllUsers, createUser, updateUser, deleteUser, getUserById } from "@/lib/data"
+import { getAllUsers, updateUser, deleteUser, getUserById } from "@/lib/data"
 import { AuthGuard } from "@/components/auth-guard"
 
 export default function AdminUsers() {
@@ -24,14 +25,13 @@ export default function AdminUsers() {
   const [success, setSuccess] = useState("")
   
   // Dialog states
-  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false)
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
   const [selectedUser, setSelectedUser] = useState(null)
   const [submitting, setSubmitting] = useState(false)
 
-  // Form state
+  // Form state with special roles support
   const [formData, setFormData] = useState({
     name: "",
     email: "",
@@ -41,7 +41,7 @@ export default function AdminUsers() {
     roll_number: "",
     employee_id: "",
     designation: "",
-    password: "",
+    special_roles: [],
   })
 
   // Stats state
@@ -64,7 +64,6 @@ export default function AdminUsers() {
       const data = await getAllUsers()
       setUsers(data)
       
-      // Calculate stats
       const studentsCount = data.filter(u => u.role === "student").length
       const teachersCount = data.filter(u => u.role === "teacher").length
       const activeCount = data.filter(u => u.is_active).length
@@ -83,48 +82,6 @@ export default function AdminUsers() {
     }
   }
 
-  const handleAddUser = async (e) => {
-    e.preventDefault()
-    setSubmitting(true)
-    setError("")
-    setSuccess("")
-
-    try {
-      // Validate required fields
-      if (!formData.name || !formData.email || !formData.role) {
-        setError("Name, email, and role are required")
-        setSubmitting(false)
-        return
-      }
-
-      // Validate email format
-      if (!formData.email.includes("@")) {
-        setError("Please enter a valid email address")
-        setSubmitting(false)
-        return
-      }
-
-      const result = await createUser(formData)
-      
-      if (result.success) {
-        setSuccess("User created successfully!")
-        setIsAddDialogOpen(false)
-        resetForm()
-        loadUsers() // Reload users list
-        
-        // Clear success message after 3 seconds
-        setTimeout(() => setSuccess(""), 3000)
-      } else {
-        setError(result.error || "Failed to create user")
-      }
-    } catch (err) {
-      console.error("Error creating user:", err)
-      setError("Failed to create user. Please try again.")
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
   const handleEditUser = async (e) => {
     e.preventDefault()
     if (!selectedUser) return
@@ -134,22 +91,41 @@ export default function AdminUsers() {
     setSuccess("")
 
     try {
-      const result = await updateUser(selectedUser.id, formData)
+      console.log("🔄 Submitting form data:", formData)
+      console.log("📋 Special roles to update:", formData.special_roles)
+      
+      const updateData = {
+        name: formData.name,
+        email: formData.email,
+        phone: formData.phone,
+        role: formData.role,
+        department: formData.department,
+        roll_number: formData.roll_number,
+        employee_id: formData.employee_id,
+        designation: formData.designation,
+        // Always send special_roles, even if empty array
+        special_roles: formData.special_roles
+      }
+      
+      console.log("📤 Sending update data:", updateData)
+      
+      const result = await updateUser(selectedUser.id, updateData)
+      
+      console.log("📥 Update result:", result)
       
       if (result.success) {
         setSuccess("User updated successfully!")
         setIsEditDialogOpen(false)
         resetForm()
         setSelectedUser(null)
-        loadUsers() // Reload users list
+        await loadUsers() // Wait for users to reload
         
-        // Clear success message after 3 seconds
         setTimeout(() => setSuccess(""), 3000)
       } else {
         setError(result.error || "Failed to update user")
       }
     } catch (err) {
-      console.error("Error updating user:", err)
+      console.error("❌ Error updating user:", err)
       setError("Failed to update user. Please try again.")
     } finally {
       setSubmitting(false)
@@ -170,9 +146,8 @@ export default function AdminUsers() {
         setSuccess("User deleted successfully!")
         setIsDeleteDialogOpen(false)
         setSelectedUser(null)
-        loadUsers() // Reload users list
+        loadUsers()
         
-        // Clear success message after 3 seconds
         setTimeout(() => setSuccess(""), 3000)
       } else {
         setError(result.error || "Failed to delete user")
@@ -198,7 +173,28 @@ export default function AdminUsers() {
   }
 
   const openEditDialog = (user) => {
+    console.log("🔍 Opening edit dialog for user:", user)
     setSelectedUser(user)
+    
+    // Parse special roles from user data
+    let specialRoles = []
+    if (user.special_roles) {
+      try {
+        if (typeof user.special_roles === 'string') {
+          specialRoles = JSON.parse(user.special_roles)
+          console.log("📋 Parsed special roles from string:", specialRoles)
+        } else if (Array.isArray(user.special_roles)) {
+          specialRoles = user.special_roles
+          console.log("📋 Using special roles array:", specialRoles)
+        }
+      } catch (e) {
+        console.error("❌ Error parsing special roles:", e)
+        specialRoles = []
+      }
+    }
+    
+    console.log("✅ Final special roles:", specialRoles)
+    
     setFormData({
       name: user.name || "",
       email: user.email || "",
@@ -208,8 +204,9 @@ export default function AdminUsers() {
       roll_number: user.roll_number || "",
       employee_id: user.employee_id || "",
       designation: user.designation || "",
-      password: "", // Don't populate password
+      special_roles: Array.isArray(specialRoles) ? specialRoles : [],
     })
+    
     setIsEditDialogOpen(true)
   }
 
@@ -228,24 +225,64 @@ export default function AdminUsers() {
       roll_number: "",
       employee_id: "",
       designation: "",
-      password: "",
+      special_roles: [],
     })
     setError("")
   }
 
-  const getRoleBadgeColor = (role: string) => {
+  const toggleSpecialRole = (role) => {
+    setFormData(prev => {
+      const currentRoles = [...prev.special_roles]
+      const roleIndex = currentRoles.indexOf(role)
+      
+      if (roleIndex > -1) {
+        // Remove role
+        currentRoles.splice(roleIndex, 1)
+        console.log("➖ Removed special role:", role, "Remaining:", currentRoles)
+      } else {
+        // Add role
+        currentRoles.push(role)
+        console.log("➕ Added special role:", role, "Total:", currentRoles)
+      }
+      
+      return {
+        ...prev,
+        special_roles: currentRoles
+      }
+    })
+  }
+
+  const getRoleBadgeColor = (role) => {
     switch (role) {
-      case "student":
-        return "bg-blue-600"
-      case "teacher":
-        return "bg-green-600"
+      case "student": return "bg-blue-600"
+      case "teacher": return "bg-green-600"
       case "tp_officer":
-      case "tp-officer":
-        return "bg-purple-600"
-      case "admin":
-        return "bg-red-600"
-      default:
-        return "bg-gray-600"
+      case "tp-officer": return "bg-purple-600"
+      case "admin": return "bg-red-600"
+      default: return "bg-gray-600"
+    }
+  }
+
+  const hasSpecialRoles = (user) => {
+    if (!user.special_roles) return false
+    try {
+      const roles = typeof user.special_roles === 'string' 
+        ? JSON.parse(user.special_roles) 
+        : user.special_roles
+      return Array.isArray(roles) && roles.length > 0
+    } catch {
+      return false
+    }
+  }
+
+  const getSpecialRoles = (user) => {
+    try {
+      const roles = typeof user.special_roles === 'string' 
+        ? JSON.parse(user.special_roles) 
+        : user.special_roles
+      return Array.isArray(roles) ? roles : []
+    } catch {
+      return []
     }
   }
 
@@ -262,16 +299,11 @@ export default function AdminUsers() {
   return (
     <AuthGuard allowedRoles={["admin"]}>
       <DashboardLayout>
-        <div className="p-6">
-          <div className="flex justify-between items-center mb-6">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900">User Management</h1>
-              <p className="text-gray-600">Manage all system users and their permissions</p>
-            </div>
-            <Button onClick={() => setIsAddDialogOpen(true)}>
-              <UserPlus className="mr-2 h-4 w-4" />
-              Add New User
-            </Button>
+        <div className="p-4 md:p-6">
+          {/* Header */}
+          <div className="mb-6">
+            <h1 className="text-2xl md:text-3xl font-bold text-gray-900">User Management</h1>
+            <p className="text-sm md:text-base text-gray-600 mt-1">Manage all system users and their permissions</p>
           </div>
 
           {/* Success/Error Messages */}
@@ -290,10 +322,10 @@ export default function AdminUsers() {
           )}
 
           {/* Search and Filters */}
-          <Card className="mb-6">
-            <CardContent className="p-4">
-              <div className="flex flex-col md:flex-row gap-4">
-                <div className="flex-1 relative">
+          <Card className="mb-4 md:mb-6">
+            <CardContent className="p-3 md:p-4">
+              <div className="flex flex-col gap-3">
+                <div className="relative">
                   <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
                   <Input
                     placeholder="Search users..."
@@ -302,170 +334,160 @@ export default function AdminUsers() {
                     className="pl-10"
                   />
                 </div>
-                <Select value={filterRole} onValueChange={setFilterRole}>
-                  <SelectTrigger className="w-full md:w-48">
-                    <SelectValue placeholder="Filter by role" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Roles</SelectItem>
-                    <SelectItem value="student">Students</SelectItem>
-                    <SelectItem value="teacher">Teachers</SelectItem>
-                    <SelectItem value="tp_officer">T&P Officers</SelectItem>
-                    <SelectItem value="admin">Admins</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Select value={filterStatus} onValueChange={setFilterStatus}>
-                  <SelectTrigger className="w-full md:w-48">
-                    <SelectValue placeholder="Filter by status" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Status</SelectItem>
-                    <SelectItem value="active">Active</SelectItem>
-                    <SelectItem value="inactive">Inactive</SelectItem>
-                  </SelectContent>
-                </Select>
+                <div className="flex gap-2 overflow-x-auto pb-2">
+                  <Select value={filterRole} onValueChange={setFilterRole}>
+                    <SelectTrigger className="w-full min-w-[140px] md:w-48">
+                      <SelectValue placeholder="Filter by role" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Roles</SelectItem>
+                      <SelectItem value="student">Students</SelectItem>
+                      <SelectItem value="teacher">Teachers</SelectItem>
+                      <SelectItem value="tp_officer">T&P Officers</SelectItem>
+                      <SelectItem value="admin">Admins</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Select value={filterStatus} onValueChange={setFilterStatus}>
+                    <SelectTrigger className="w-full min-w-[140px] md:w-48">
+                      <SelectValue placeholder="Filter by status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Status</SelectItem>
+                      <SelectItem value="active">Active</SelectItem>
+                      <SelectItem value="inactive">Inactive</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
             </CardContent>
           </Card>
 
-          {/* User Stats */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-            <Card>
-              <CardContent className="p-4">
+          {/* Stats - Horizontal scroll on mobile */}
+          <div className="flex gap-3 mb-4 md:mb-6 overflow-x-auto pb-2 md:grid md:grid-cols-4 md:overflow-x-visible">
+            <Card className="min-w-[140px] md:min-w-0 flex-shrink-0">
+              <CardContent className="p-3 md:p-4">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm font-medium text-gray-600">Total Users</p>
-                    <p className="text-2xl font-bold">{stats.total}</p>
+                    <p className="text-xs md:text-sm font-medium text-gray-600">Total Users</p>
+                    <p className="text-xl md:text-2xl font-bold">{stats.total}</p>
                   </div>
-                  <Users className="h-8 w-8 text-blue-600" />
+                  <Users className="h-6 w-6 md:h-8 md:w-8 text-blue-600" />
                 </div>
               </CardContent>
             </Card>
-            <Card>
-              <CardContent className="p-4">
+            <Card className="min-w-[140px] md:min-w-0 flex-shrink-0">
+              <CardContent className="p-3 md:p-4">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm font-medium text-gray-600">Students</p>
-                    <p className="text-2xl font-bold text-blue-600">{stats.students}</p>
+                    <p className="text-xs md:text-sm font-medium text-gray-600">Students</p>
+                    <p className="text-xl md:text-2xl font-bold text-blue-600">{stats.students}</p>
                   </div>
-                  <Users className="h-8 w-8 text-blue-600" />
+                  <Users className="h-6 w-6 md:h-8 md:w-8 text-blue-600" />
                 </div>
               </CardContent>
             </Card>
-            <Card>
-              <CardContent className="p-4">
+            <Card className="min-w-[140px] md:min-w-0 flex-shrink-0">
+              <CardContent className="p-3 md:p-4">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm font-medium text-gray-600">Faculty</p>
-                    <p className="text-2xl font-bold text-green-600">{stats.teachers}</p>
+                    <p className="text-xs md:text-sm font-medium text-gray-600">Faculty</p>
+                    <p className="text-xl md:text-2xl font-bold text-green-600">{stats.teachers}</p>
                   </div>
-                  <Users className="h-8 w-8 text-green-600" />
+                  <Users className="h-6 w-6 md:h-8 md:w-8 text-green-600" />
                 </div>
               </CardContent>
             </Card>
-            <Card>
-              <CardContent className="p-4">
+            <Card className="min-w-[140px] md:min-w-0 flex-shrink-0">
+              <CardContent className="p-3 md:p-4">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm font-medium text-gray-600">Active Users</p>
-                    <p className="text-2xl font-bold text-purple-600">{stats.activeToday}</p>
+                    <p className="text-xs md:text-sm font-medium text-gray-600">Active</p>
+                    <p className="text-xl md:text-2xl font-bold text-purple-600">{stats.activeToday}</p>
                   </div>
-                  <Users className="h-8 w-8 text-purple-600" />
+                  <Users className="h-6 w-6 md:h-8 md:w-8 text-purple-600" />
                 </div>
               </CardContent>
             </Card>
           </div>
 
-          {/* Users List */}
+          {/* Users List - Minimal cards */}
           {loading ? (
             <div className="flex justify-center items-center h-64">
               <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
             </div>
           ) : filteredUsers.length === 0 ? (
             <Card>
-              <CardContent className="p-12 text-center">
-                <Users className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+              <CardContent className="p-8 md:p-12 text-center">
+                <Users className="h-10 w-10 md:h-12 md:w-12 text-gray-400 mx-auto mb-4" />
                 <p className="text-gray-600">No users found matching your criteria</p>
               </CardContent>
             </Card>
           ) : (
-            <div className="space-y-4">
+            <div className="space-y-3">
               {filteredUsers.map((user) => (
-                <Card key={user.id}>
-                  <CardContent className="p-6">
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-3 mb-3">
-                          <div className="h-12 w-12 rounded-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center text-white font-bold text-lg">
-                            {user.name?.charAt(0).toUpperCase() || "U"}
-                          </div>
-                          <div>
-                            <h3 className="text-lg font-semibold">{user.name || "Unnamed User"}</h3>
-                            <div className="flex items-center gap-2">
-                              <Badge className={`${getRoleBadgeColor(user.role)} text-white`}>
-                                {user.role?.replace("_", " ").toUpperCase()}
-                              </Badge>
-                              <Badge variant={user.is_active ? "default" : "secondary"}>
-                                {user.is_active ? "ACTIVE" : "INACTIVE"}
-                              </Badge>
-                            </div>
-                          </div>
+                <Card key={user.id} className="hover:shadow-md transition-shadow">
+                  <CardContent className="p-3 md:p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      {/* User Info - Minimal */}
+                      <div className="flex items-center gap-3 min-w-0 flex-1">
+                        <div className="h-10 w-10 md:h-12 md:w-12 rounded-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center text-white font-bold text-sm md:text-lg flex-shrink-0">
+                          {user.name?.charAt(0).toUpperCase() || "U"}
                         </div>
-
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          <div className="space-y-2">
-                            <div className="flex items-center gap-2 text-sm text-gray-600">
-                              <Mail className="h-4 w-4" />
-                              <span>{user.email}</span>
-                            </div>
-                            {user.phone && (
-                              <div className="flex items-center gap-2 text-sm text-gray-600">
-                                <Phone className="h-4 w-4" />
-                                <span>{user.phone}</span>
-                              </div>
-                            )}
-                            {user.created_at && (
-                              <div className="flex items-center gap-2 text-sm text-gray-600">
-                                <Calendar className="h-4 w-4" />
-                                <span>Joined: {new Date(user.created_at).toLocaleDateString()}</span>
-                              </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            <h3 className="text-sm md:text-base font-semibold truncate">{user.name || "Unnamed User"}</h3>
+                            {hasSpecialRoles(user) && (
+                              <Shield className="h-4 w-4 text-orange-500 flex-shrink-0" title="Special Permissions" />
                             )}
                           </div>
-                          <div className="space-y-2">
-                            {user.department && (
-                              <div className="text-sm">
-                                <span className="text-gray-600">Department:</span>
-                                <span className="ml-2 font-medium">{user.department}</span>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <Badge className={`${getRoleBadgeColor(user.role)} text-white text-xs`}>
+                              {user.role?.replace("_", " ").toUpperCase()}
+                            </Badge>
+                            {hasSpecialRoles(user) && (
+                              <div className="flex gap-1 flex-wrap">
+                                {getSpecialRoles(user).map(role => (
+                                  <Badge key={role} variant="outline" className="text-xs border-orange-500 text-orange-600">
+                                    +{role.replace("_", " ").toUpperCase()}
+                                  </Badge>
+                                ))}
                               </div>
                             )}
-                            {user.roll_number && (
-                              <div className="text-sm">
-                                <span className="text-gray-600">Roll Number:</span>
-                                <span className="ml-2 font-medium">{user.roll_number}</span>
-                              </div>
-                            )}
-                            {user.employee_id && (
-                              <div className="text-sm">
-                                <span className="text-gray-600">Employee ID:</span>
-                                <span className="ml-2 font-medium">{user.employee_id}</span>
-                              </div>
-                            )}
+                            <Badge variant={user.is_active ? "default" : "secondary"} className="text-xs">
+                              {user.is_active ? "ACTIVE" : "INACTIVE"}
+                            </Badge>
                           </div>
+                          <p className="text-xs text-gray-600 mt-1 truncate hidden md:block">{user.email}</p>
                         </div>
                       </div>
 
-                      <div className="flex flex-col gap-2 ml-4">
-                        <Button variant="outline" size="sm" onClick={() => handleViewUser(user)}>
-                          <Eye className="h-4 w-4 mr-1" />
-                          View
+                      {/* Actions */}
+                      <div className="flex gap-1 md:gap-2 flex-shrink-0">
+                        <Button 
+                          variant="outline" 
+                          size="sm" 
+                          onClick={() => handleViewUser(user)}
+                          className="h-8 px-2 md:px-3"
+                        >
+                          <Eye className="h-3 w-3 md:h-4 md:w-4 md:mr-1" />
+                          <span className="hidden md:inline">View</span>
                         </Button>
-                        <Button variant="outline" size="sm" onClick={() => openEditDialog(user)}>
-                          <Edit className="h-4 w-4 mr-1" />
-                          Edit
+                        <Button 
+                          variant="outline" 
+                          size="sm" 
+                          onClick={() => openEditDialog(user)}
+                          className="h-8 px-2 md:px-3"
+                        >
+                          <Edit className="h-3 w-3 md:h-4 md:w-4 md:mr-1" />
+                          <span className="hidden md:inline">Edit</span>
                         </Button>
-                        <Button variant="destructive" size="sm" onClick={() => openDeleteDialog(user)}>
-                          <Trash2 className="h-4 w-4 mr-1" />
-                          Delete
+                        <Button 
+                          variant="destructive" 
+                          size="sm" 
+                          onClick={() => openDeleteDialog(user)}
+                          className="h-8 px-2 md:px-3"
+                        >
+                          <Trash2 className="h-3 w-3 md:h-4 md:w-4" />
                         </Button>
                       </div>
                     </div>
@@ -475,165 +497,17 @@ export default function AdminUsers() {
             </div>
           )}
 
-          {/* Add User Dialog */}
-          <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-              <DialogHeader>
-                <DialogTitle>Add New User</DialogTitle>
-                <DialogDescription>Create a new user account in the system</DialogDescription>
-              </DialogHeader>
-              <form onSubmit={handleAddUser}>
-                <div className="grid gap-4 py-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="name">Full Name *</Label>
-                      <Input
-                        id="name"
-                        value={formData.name}
-                        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                        placeholder="John Doe"
-                        required
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="email">Email *</Label>
-                      <Input
-                        id="email"
-                        type="email"
-                        value={formData.email}
-                        onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                        placeholder="john.doe@charusat.edu.in"
-                        required
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="phone">Phone</Label>
-                      <Input
-                        id="phone"
-                        value={formData.phone}
-                        onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                        placeholder="+91 9876543210"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="role">Role *</Label>
-                      <Select value={formData.role} onValueChange={(value) => setFormData({ ...formData, role: value })}>
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="student">Student</SelectItem>
-                          <SelectItem value="teacher">Teacher</SelectItem>
-                          <SelectItem value="tp_officer">T&P Officer</SelectItem>
-                          <SelectItem value="admin">Admin</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-
-                  {formData.role === "student" && (
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="roll_number">Roll Number</Label>
-                        <Input
-                          id="roll_number"
-                          value={formData.roll_number}
-                          onChange={(e) => setFormData({ ...formData, roll_number: e.target.value })}
-                          placeholder="21CE001"
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="department">Department</Label>
-                        <Input
-                          id="department"
-                          value={formData.department}
-                          onChange={(e) => setFormData({ ...formData, department: e.target.value })}
-                          placeholder="Computer Engineering"
-                        />
-                      </div>
-                    </div>
-                  )}
-
-                  {(formData.role === "teacher" || formData.role === "tp_officer") && (
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="employee_id">Employee ID</Label>
-                        <Input
-                          id="employee_id"
-                          value={formData.employee_id}
-                          onChange={(e) => setFormData({ ...formData, employee_id: e.target.value })}
-                          placeholder="EMP001"
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="designation">Designation</Label>
-                        <Input
-                          id="designation"
-                          value={formData.designation}
-                          onChange={(e) => setFormData({ ...formData, designation: e.target.value })}
-                          placeholder="Assistant Professor"
-                        />
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="space-y-2">
-                    <Label htmlFor="password">Password *</Label>
-                    <Input
-                      id="password"
-                      type="password"
-                      value={formData.password}
-                      onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                      placeholder="Minimum 6 characters"
-                      required
-                    />
-                  </div>
-
-                  {error && (
-                    <Alert className="bg-red-50 border-red-200">
-                      <AlertCircle className="h-4 w-4 text-red-600" />
-                      <AlertDescription className="text-red-800">{error}</AlertDescription>
-                    </Alert>
-                  )}
-                </div>
-                <DialogFooter>
-                  <Button type="button" variant="outline" onClick={() => {
-                    setIsAddDialogOpen(false)
-                    resetForm()
-                  }}>
-                    Cancel
-                  </Button>
-                  <Button type="submit" disabled={submitting}>
-                    {submitting ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Creating...
-                      </>
-                    ) : (
-                      <>
-                        <UserPlus className="mr-2 h-4 w-4" />
-                        Create User
-                      </>
-                    )}
-                  </Button>
-                </DialogFooter>
-              </form>
-            </DialogContent>
-          </Dialog>
-
           {/* Edit User Dialog */}
           <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
             <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle>Edit User</DialogTitle>
-                <DialogDescription>Update user information</DialogDescription>
+                <DialogDescription>Update user information and permissions</DialogDescription>
               </DialogHeader>
               <form onSubmit={handleEditUser}>
                 <div className="grid gap-4 py-4">
-                  <div className="grid grid-cols-2 gap-4">
+                  {/* Basic Info */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label htmlFor="edit-name">Full Name</Label>
                       <Input
@@ -653,7 +527,8 @@ export default function AdminUsers() {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4">
+                  {/* Phone & Primary Role */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label htmlFor="edit-phone">Phone</Label>
                       <Input
@@ -663,14 +538,109 @@ export default function AdminUsers() {
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="edit-department">Department</Label>
-                      <Input
-                        id="edit-department"
-                        value={formData.department}
-                        onChange={(e) => setFormData({ ...formData, department: e.target.value })}
-                      />
+                      <Label htmlFor="edit-role">Primary Role</Label>
+                      <Select value={formData.role} onValueChange={(value) => setFormData({ ...formData, role: value })}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="student">Student</SelectItem>
+                          <SelectItem value="teacher">Teacher</SelectItem>
+                          <SelectItem value="tp_officer">T&P Officer</SelectItem>
+                          <SelectItem value="admin">Admin</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </div>
                   </div>
+
+                  {/* Special Roles Section */}
+                  <div className="space-y-3 border rounded-lg p-4 bg-orange-50">
+                    <div className="flex items-center gap-2">
+                      <Shield className="h-5 w-5 text-orange-600" />
+                      <Label className="text-base font-semibold">Special Role Permissions</Label>
+                    </div>
+                    <p className="text-sm text-gray-600">Grant this user access to multiple role interfaces. Primary role: <strong>{formData.role.replace("_", " ").toUpperCase()}</strong></p>
+                    <div className="space-y-2">
+                      {["student", "teacher", "tp_officer", "admin"].map((role) => {
+                        const isPrimaryRole = formData.role === role
+                        const isChecked = formData.special_roles.includes(role)
+                        
+                        return (
+                          <div key={role} className="flex items-center space-x-2">
+                            <Checkbox
+                              id={`special-${role}`}
+                              checked={isChecked}
+                              onCheckedChange={() => toggleSpecialRole(role)}
+                              disabled={isPrimaryRole}
+                            />
+                            <label
+                              htmlFor={`special-${role}`}
+                              className={`text-sm font-medium leading-none ${isPrimaryRole ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
+                            >
+                              {role.replace("_", " ").toUpperCase()}
+                              {isPrimaryRole && <span className="text-gray-500 ml-2">(Primary Role - Cannot be deselected)</span>}
+                              {isChecked && !isPrimaryRole && <span className="text-green-600 ml-2">✓ Granted</span>}
+                            </label>
+                          </div>
+                        )
+                      })}
+                    </div>
+                    {formData.special_roles.length > 0 && (
+                      <div className="mt-3 p-3 bg-white rounded border border-orange-200">
+                        <p className="text-sm font-medium text-gray-700 mb-2">Currently selected special roles:</p>
+                        <div className="flex gap-2 flex-wrap">
+                          {formData.special_roles.map(role => (
+                            <Badge key={role} className="bg-orange-600 text-white">
+                              {role.replace("_", " ").toUpperCase()}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Department */}
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-department">Department</Label>
+                    <Input
+                      id="edit-department"
+                      value={formData.department}
+                      onChange={(e) => setFormData({ ...formData, department: e.target.value })}
+                    />
+                  </div>
+
+                  {/* Role-specific fields */}
+                  {formData.role === "student" && (
+                    <div className="space-y-2">
+                      <Label htmlFor="edit-roll">Roll Number</Label>
+                      <Input
+                        id="edit-roll"
+                        value={formData.roll_number}
+                        onChange={(e) => setFormData({ ...formData, roll_number: e.target.value })}
+                      />
+                    </div>
+                  )}
+
+                  {(formData.role === "teacher" || formData.role === "tp_officer") && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="edit-empid">Employee ID</Label>
+                        <Input
+                          id="edit-empid"
+                          value={formData.employee_id}
+                          onChange={(e) => setFormData({ ...formData, employee_id: e.target.value })}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="edit-designation">Designation</Label>
+                        <Input
+                          id="edit-designation"
+                          value={formData.designation}
+                          onChange={(e) => setFormData({ ...formData, designation: e.target.value })}
+                        />
+                      </div>
+                    </div>
+                  )}
 
                   {error && (
                     <Alert className="bg-red-50 border-red-200">
@@ -678,6 +648,17 @@ export default function AdminUsers() {
                       <AlertDescription className="text-red-800">{error}</AlertDescription>
                     </Alert>
                   )}
+
+                  {/* Debug Info - Remove in production */}
+                  <details className="text-xs bg-gray-50 p-3 rounded">
+                    <summary className="cursor-pointer font-medium text-gray-700">🔍 Debug Info (for development)</summary>
+                    <div className="mt-2 space-y-1 text-gray-600">
+                      <p><strong>Primary Role:</strong> {formData.role}</p>
+                      <p><strong>Special Roles Array:</strong> {JSON.stringify(formData.special_roles)}</p>
+                      <p><strong>Special Roles Count:</strong> {formData.special_roles.length}</p>
+                      <p><strong>Will be saved as:</strong> {formData.special_roles.length > 0 ? JSON.stringify(formData.special_roles) : 'null'}</p>
+                    </div>
+                  </details>
                 </div>
                 <DialogFooter>
                   <Button type="button" variant="outline" onClick={() => {
@@ -707,7 +688,7 @@ export default function AdminUsers() {
 
           {/* View User Dialog */}
           <Dialog open={isViewDialogOpen} onOpenChange={setIsViewDialogOpen}>
-            <DialogContent className="max-w-2xl">
+            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle>User Details</DialogTitle>
                 <DialogDescription>Complete user information</DialogDescription>
@@ -720,13 +701,37 @@ export default function AdminUsers() {
                     </div>
                     <div>
                       <h3 className="text-xl font-bold">{selectedUser.name}</h3>
-                      <Badge className={`${getRoleBadgeColor(selectedUser.role)} text-white`}>
-                        {selectedUser.role?.replace("_", " ").toUpperCase()}
-                      </Badge>
+                      <div className="flex items-center gap-2 mt-1">
+                        <Badge className={`${getRoleBadgeColor(selectedUser.role)} text-white`}>
+                          {selectedUser.role?.replace("_", " ").toUpperCase()}
+                        </Badge>
+                        {hasSpecialRoles(selectedUser) && (
+                          <Badge variant="outline" className="border-orange-500 text-orange-600">
+                            <Shield className="h-3 w-3 mr-1" />
+                            Special Permissions
+                          </Badge>
+                        )}
+                      </div>
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4">
+                  {hasSpecialRoles(selectedUser) && (
+                    <Alert className="bg-orange-50 border-orange-200">
+                      <Shield className="h-4 w-4 text-orange-600" />
+                      <AlertDescription className="text-orange-800">
+                        <strong>Additional Role Access:</strong>
+                        <div className="flex gap-2 mt-2 flex-wrap">
+                          {getSpecialRoles(selectedUser).map(role => (
+                            <Badge key={role} className="bg-orange-600 text-white">
+                              {role.replace("_", " ").toUpperCase()}
+                            </Badge>
+                          ))}
+                        </div>
+                      </AlertDescription>
+                    </Alert>
+                  )}
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <Label className="text-gray-600">Email</Label>
                       <p className="font-medium">{selectedUser.email}</p>
@@ -757,6 +762,12 @@ export default function AdminUsers() {
                         <p className="font-medium">{selectedUser.employee_id}</p>
                       </div>
                     )}
+                    {selectedUser.designation && (
+                      <div>
+                        <Label className="text-gray-600">Designation</Label>
+                        <p className="font-medium">{selectedUser.designation}</p>
+                      </div>
+                    )}
                     {selectedUser.created_at && (
                       <div>
                         <Label className="text-gray-600">Joined Date</Label>
@@ -767,7 +778,14 @@ export default function AdminUsers() {
                 </div>
               )}
               <DialogFooter>
-                <Button onClick={() => setIsViewDialogOpen(false)}>Close</Button>
+                <Button variant="outline" onClick={() => setIsViewDialogOpen(false)}>Close</Button>
+                <Button onClick={() => {
+                  setIsViewDialogOpen(false)
+                  openEditDialog(selectedUser)
+                }}>
+                  <Edit className="mr-2 h-4 w-4" />
+                  Edit User
+                </Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>

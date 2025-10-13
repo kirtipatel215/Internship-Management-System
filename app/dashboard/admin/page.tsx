@@ -1,4 +1,6 @@
 "use client"
+import { useEffect, useState } from "react"
+import Link from "next/link"
 import { AuthGuard } from "@/components/auth-guard"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -13,19 +15,18 @@ import {
   Settings,
   BarChart3,
   Star,
-  Zap,
-  Target,
-  Bell,
-  ArrowRight,
   TrendingUp,
+  ArrowRight,
+  FileText,
+  Award,
+  Building2,
+  Briefcase,
 } from "lucide-react"
-import Link from "next/link"
 import { getCurrentUser, getAdminDashboardData } from "@/lib/data"
-import { useEffect, useState } from "react"
 
 export default function AdminDashboard() {
-  const [user, setUser] = useState(null)
-  const [dashboardData, setDashboardData] = useState(null)
+  const [user, setUser] = useState<any>(null)
+  const [dashboardData, setDashboardData] = useState<any>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -38,7 +39,6 @@ export default function AdminDashboard() {
         setDashboardData(data)
       } catch (error) {
         console.error("Error loading admin dashboard:", error)
-        // Set mock data on error
         setDashboardData({
           stats: {
             totalUsers: 1250,
@@ -59,6 +59,7 @@ export default function AdminDashboard() {
           recentActivities: [
             { type: "system", title: "System initialized", time: new Date().toISOString(), status: "success" }
           ],
+          userGrowth: { thisMonth: 15, lastMonth: 12, growthRate: 25 },
         })
       } finally {
         setLoading(false)
@@ -72,13 +73,13 @@ export default function AdminDashboard() {
     return (
       <AuthGuard allowedRoles={["admin"]}>
         <DashboardLayout>
-          <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100 p-6 space-y-6">
-            <div className="animate-pulse space-y-6">
-              <div className="h-8 w-64 bg-gray-200 rounded mb-2"></div>
-              <div className="h-4 w-96 bg-gray-200 rounded"></div>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          <div className="p-4 md:p-6 space-y-4 md:space-y-6">
+            <div className="animate-pulse space-y-4">
+              <div className="h-8 w-48 bg-gray-200 rounded"></div>
+              <div className="h-4 w-64 bg-gray-200 rounded"></div>
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
                 {[1, 2, 3, 4].map((i) => (
-                  <div key={i} className="h-32 bg-gray-200 rounded-2xl"></div>
+                  <div key={i} className="h-24 md:h-32 bg-gray-200 rounded-xl"></div>
                 ))}
               </div>
             </div>
@@ -94,14 +95,13 @@ export default function AdminDashboard() {
     switch (status) {
       case "healthy":
       case "success":
-        return "bg-green-100 text-green-800 border-green-200"
+        return "bg-green-100 text-green-700 border-green-200"
       case "warning":
-        return "bg-yellow-100 text-yellow-800 border-yellow-200"
+        return "bg-yellow-100 text-yellow-700 border-yellow-200"
       case "error":
-      case "critical":
-        return "bg-red-100 text-red-800 border-red-200"
+        return "bg-red-100 text-red-700 border-red-200"
       default:
-        return "bg-gray-100 text-gray-800 border-gray-200"
+        return "bg-gray-100 text-gray-700 border-gray-200"
     }
   }
 
@@ -118,254 +118,216 @@ export default function AdminDashboard() {
     }
   }
 
-  const getGradientAvatar = (title: string, index: number) => {
-    const gradients = [
-      "bg-gradient-to-br from-blue-400 to-purple-500",
-      "bg-gradient-to-br from-emerald-400 to-teal-500",
-      "bg-gradient-to-br from-orange-400 to-pink-500",
-      "bg-gradient-to-br from-indigo-400 to-blue-500",
-      "bg-gradient-to-br from-rose-400 to-red-500",
-    ]
-    return gradients[index % gradients.length]
-  }
-
   return (
     <AuthGuard allowedRoles={["admin"]}>
       <DashboardLayout>
-        <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100 relative">
-          <div className="relative z-10 p-6 space-y-8">
+        <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100">
+          <div className="p-4 md:p-6 space-y-4 md:space-y-6">
             {/* Header */}
-            <div className="flex justify-between items-start">
-              <div className="space-y-2">
-                <div className="flex items-center space-x-3">
-                  <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl flex items-center justify-center shadow-lg">
-                    <Star className="h-6 w-6 text-white" />
-                  </div>
-                  <div>
-                    <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
-                      System Administration
-                    </h1>
-                    <p className="text-gray-600 text-lg">Monitor system health, manage users, and oversee operations</p>
-                  </div>
+            <div className="space-y-3">
+              <div className="flex items-center space-x-3">
+                <div className="w-10 h-10 md:w-12 md:h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl md:rounded-2xl flex items-center justify-center shadow-lg">
+                  <Star className="h-5 w-5 md:h-6 md:w-6 text-white" />
                 </div>
-                <div className="flex items-center space-x-2 mt-4">
-                  <Badge className="bg-gradient-to-r from-blue-100 to-purple-100 text-blue-700 border-blue-200">
-                    <Zap className="h-3 w-3 mr-1" />
-                    System Admin
-                  </Badge>
-                  <Badge className="bg-gradient-to-r from-emerald-100 to-teal-100 text-emerald-700 border-emerald-200">
-                    <Target className="h-3 w-3 mr-1" />
-                    All Systems Operational
-                  </Badge>
+                <div>
+                  <h1 className="text-xl md:text-3xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+                    System Administration
+                  </h1>
+                  <p className="text-sm md:text-base text-gray-600">Monitor and manage system operations</p>
                 </div>
               </div>
-              <div className="text-right space-y-1">
-                <p className="text-sm text-gray-500 font-medium">System Administrator</p>
-                <p className="text-sm text-gray-500">Last login: {new Date().toLocaleString()}</p>
-                <p className="text-xs text-gray-400">ID: ADM001</p>
-                <div className="flex items-center justify-end mt-2">
-                  <Bell className="h-4 w-4 text-blue-500 mr-1" />
-                  <span className="text-xs text-blue-600 font-medium">5 system alerts</span>
-                </div>
+              <div className="flex flex-wrap gap-2">
+                <Badge className="bg-blue-100 text-blue-700 border-blue-200">
+                  System Admin
+                </Badge>
+                <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200">
+                  All Systems Operational
+                </Badge>
               </div>
             </div>
 
-            {/* System Overview */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            {/* Stats Grid */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
               {[
                 {
                   title: "Total Users",
                   value: data.stats.totalUsers,
                   icon: Users,
-                  color: "blue",
+                  subtitle: `${data.stats.activeUsers} active`,
                   trend: "+12%",
-                  subtitle: `${data.stats.activeUsers} active users`,
+                  link: "/dashboard/admin/users",
                 },
                 {
-                  title: "System Uptime",
-                  value: "99.8%",
-                  icon: Activity,
-                  color: "emerald",
-                  trend: "+0.2%",
-                  subtitle: "All systems operational",
+                  title: "Students",
+                  value: data.stats.totalStudents,
+                  icon: Users,
+                  subtitle: "Registered students",
+                  trend: "+8%",
+                  link: "/dashboard/admin/users?role=student",
                 },
                 {
-                  title: "Data Storage",
-                  value: "75%",
-                  icon: Database,
-                  color: "orange",
-                  trend: "+5%",
-                  subtitle: "Storage utilization",
+                  title: "Reports",
+                  value: data.stats.totalReports,
+                  icon: FileText,
+                  subtitle: "Total submitted",
+                  trend: "+15%",
+                  link: "/dashboard/admin/analytics",
                 },
                 {
-                  title: "Security Status",
-                  value: "Secure",
-                  icon: Shield,
-                  color: "purple",
-                  trend: "100%",
-                  subtitle: "All systems protected",
+                  title: "Certificates",
+                  value: data.stats.totalCertificates,
+                  icon: Award,
+                  subtitle: "Total issued",
+                  trend: "+10%",
+                  link: "/dashboard/admin/analytics",
                 },
               ].map((stat, index) => (
-                <Card
-                  key={index}
-                  className="bg-white/80 backdrop-blur-sm border-0 shadow-lg hover:shadow-xl transition-all duration-300 border-l-4 border-l-blue-500"
-                >
-                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium text-gray-600">{stat.title}</CardTitle>
-                    <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center">
-                      <stat.icon className="h-5 w-5 text-blue-600" />
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-3xl font-bold text-blue-600 mb-2">{stat.value}</div>
-                    <div className="flex items-center justify-between">
-                      <p className="text-xs text-gray-500">{stat.subtitle}</p>
-                      <div className="flex items-center">
-                        <TrendingUp className="h-3 w-3 text-emerald-500 mr-1" />
-                        <span className="text-xs text-emerald-600 font-medium">{stat.trend}</span>
+                <Link key={index} href={stat.link}>
+                  <Card className="bg-white/90 backdrop-blur-sm border-0 shadow-lg hover:shadow-xl transition-all duration-300 cursor-pointer h-full">
+                    <CardContent className="p-3 md:p-4">
+                      <div className="flex items-start justify-between mb-2">
+                        <div className="w-8 h-8 md:w-10 md:h-10 rounded-lg bg-blue-100 flex items-center justify-center">
+                          <stat.icon className="h-4 w-4 md:h-5 md:w-5 text-blue-600" />
+                        </div>
+                        <div className="flex items-center">
+                          <TrendingUp className="h-3 w-3 text-emerald-500 mr-1" />
+                          <span className="text-xs font-medium text-emerald-600">{stat.trend}</span>
+                        </div>
                       </div>
-                    </div>
-                    {stat.title === "System Uptime" && <Progress value={99.8} className="mt-2 h-2" />}
-                    {stat.title === "Data Storage" && <Progress value={75} className="mt-2 h-2" />}
-                  </CardContent>
-                </Card>
+                      <div className="text-xl md:text-2xl font-bold text-blue-600 mb-1">{stat.value}</div>
+                      <p className="text-xs text-gray-600 font-medium mb-1">{stat.title}</p>
+                      <p className="text-xs text-gray-500">{stat.subtitle}</p>
+                    </CardContent>
+                  </Card>
+                </Link>
               ))}
             </div>
 
-            {/* Main Content Grid */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-              {/* System Health */}
-              <Card className="lg:col-span-2 bg-white/80 backdrop-blur-sm border-0 shadow-lg hover:shadow-xl transition-all duration-300">
-                <CardHeader className="border-b border-gray-100">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-3">
-                      <div className="w-10 h-10 bg-gradient-to-br from-blue-100 to-purple-100 rounded-xl flex items-center justify-center">
-                        <Activity className="h-5 w-5 text-blue-600" />
-                      </div>
-                      <div>
-                        <CardTitle className="text-xl font-bold text-gray-900">System Health</CardTitle>
-                        <CardDescription className="text-gray-600">
-                          Current status of all system components
-                        </CardDescription>
-                      </div>
-                    </div>
-                    <Badge className="bg-gradient-to-r from-blue-100 to-purple-100 text-blue-700">Real-time</Badge>
+            {/* System Health - Horizontal Scroll on Mobile */}
+            <Card className="bg-white/90 backdrop-blur-sm border-0 shadow-lg">
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-2">
+                    <Activity className="h-5 w-5 text-blue-600" />
+                    <CardTitle className="text-lg md:text-xl">System Health</CardTitle>
                   </div>
-                </CardHeader>
-                <CardContent className="p-6">
-                  <div className="space-y-4">
-                    {data.systemHealth.map((component, index) => (
+                  <Link href="/dashboard/admin/logs">
+                    <Button variant="ghost" size="sm" className="text-blue-600 hover:text-blue-700">
+                      View Logs
+                      <ArrowRight className="h-4 w-4 ml-1" />
+                    </Button>
+                  </Link>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0">
+                  <div className="flex md:grid md:grid-cols-2 gap-3 min-w-max md:min-w-0">
+                    {data.systemHealth.map((component: any, index: number) => (
                       <div
-                        key={`component-${index}`}
-                        className="flex items-center space-x-4 p-4 rounded-xl bg-gradient-to-r from-gray-50 to-blue-50 hover:from-blue-50 hover:to-purple-50 transition-all duration-300"
+                        key={index}
+                        className="flex items-center space-x-3 p-3 rounded-lg bg-gradient-to-r from-gray-50 to-blue-50 min-w-[280px] md:min-w-0"
                       >
-                        <div className="flex-shrink-0">
-                          <div
-                            className={`w-12 h-12 ${getGradientAvatar(component.component, index)} rounded-full flex items-center justify-center shadow-lg`}
-                          >
-                            <span className="text-lg">{getStatusIcon(component.status)}</span>
-                          </div>
-                        </div>
-                        <div className="flex-1 min-w-0">
+                        <div className="text-2xl">{getStatusIcon(component.status)}</div>
+                        <div className="flex-1">
                           <p className="text-sm font-semibold text-gray-900">{component.component}</p>
-                          <p className="text-sm text-gray-600">Uptime: {component.uptime}%</p>
+                          <p className="text-xs text-gray-600">Uptime: {component.uptime}%</p>
+                          <Progress value={component.uptime} className="mt-1 h-1" />
                         </div>
-                        <Badge className={`${getStatusColor(component.status)} px-3 py-1 text-xs font-medium`}>
+                        <Badge className={`${getStatusColor(component.status)} text-xs`}>
                           {component.status}
                         </Badge>
                       </div>
                     ))}
                   </div>
-                  <div className="mt-6 pt-4 border-t border-gray-100">
-                    <Link href="/dashboard/admin/logs">
-                      <Button className="w-full bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white">
-                        <Activity className="h-4 w-4 mr-2" />
-                        View System Logs
-                        <ArrowRight className="h-4 w-4 ml-2" />
-                      </Button>
-                    </Link>
-                  </div>
-                </CardContent>
-              </Card>
+                </div>
+              </CardContent>
+            </Card>
 
-              {/* Recent Activities */}
-              <Card className="bg-white/80 backdrop-blur-sm border-0 shadow-lg hover:shadow-xl transition-all duration-300">
-                <CardHeader className="border-b border-gray-100">
-                  <div className="flex items-center space-x-3">
-                    <div className="w-10 h-10 bg-gradient-to-br from-purple-100 to-indigo-100 rounded-xl flex items-center justify-center">
-                      <Activity className="h-5 w-5 text-purple-600" />
-                    </div>
-                    <div>
-                      <CardTitle className="text-xl font-bold text-gray-900">Recent Activities</CardTitle>
-                      <CardDescription className="text-gray-600">Latest system events</CardDescription>
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent className="p-6">
-                  <div className="space-y-4">
-                    {data.recentActivities.map((activity, index) => (
-                      <div
-                        key={`activity-${index}`}
-                        className="flex items-center space-x-3 p-3 rounded-lg bg-gradient-to-r from-gray-50 to-purple-50 border border-purple-100"
-                      >
-                        <div className="flex-shrink-0">
-                          <Activity className="h-4 w-4 text-gray-500" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-gray-900">{activity.title}</p>
-                          <p className="text-xs text-gray-500">
-                            {new Date(activity.time).toLocaleDateString()} •{" "}
-                            {new Date(activity.time).toLocaleTimeString()}
-                          </p>
-                        </div>
-                        <Badge className={`${getStatusColor(activity.status)} px-2 py-1 text-xs`}>
-                          {activity.status}
-                        </Badge>
-                      </div>
+            {/* Quick Actions - Horizontal Scroll on Mobile */}
+            <Card className="bg-white/90 backdrop-blur-sm border-0 shadow-lg">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-lg md:text-xl">Quick Actions</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0">
+                  <div className="flex md:grid md:grid-cols-4 gap-3 min-w-max md:min-w-0">
+                    {[
+                      { href: "/dashboard/admin/users", icon: Users, label: "Manage Users" },
+                      { href: "/dashboard/admin/analytics", icon: BarChart3, label: "Analytics" },
+                      { href: "/dashboard/admin/logs", icon: Activity, label: "System Logs" },
+                      { href: "/dashboard/admin/settings", icon: Settings, label: "Settings" },
+                    ].map((action, index) => (
+                      <Link key={index} href={action.href} className="min-w-[140px] md:min-w-0">
+                        <Button
+                          variant="outline"
+                          className="w-full h-20 flex flex-col items-center justify-center space-y-2 hover:bg-blue-50 hover:border-blue-300 transition-all"
+                        >
+                          <action.icon className="h-5 w-5 text-blue-600" />
+                          <span className="text-xs font-semibold text-gray-700">{action.label}</span>
+                        </Button>
+                      </Link>
                     ))}
                   </div>
-                </CardContent>
-              </Card>
-            </div>
+                </div>
+              </CardContent>
+            </Card>
 
-            {/* Quick Actions */}
-            <Card className="bg-white/80 backdrop-blur-sm border-0 shadow-lg hover:shadow-xl transition-all duration-300">
-              <CardHeader className="border-b border-gray-100">
-                <div className="flex items-center space-x-3">
-                  <div className="w-10 h-10 bg-gradient-to-br from-purple-100 to-indigo-100 rounded-xl flex items-center justify-center">
-                    <Zap className="h-5 w-5 text-purple-600" />
-                  </div>
-                  <div>
-                    <CardTitle className="text-xl font-bold text-gray-900">Administrative Actions</CardTitle>
-                    <CardDescription className="text-gray-600">
-                      System management and configuration tools
-                    </CardDescription>
-                  </div>
+            {/* Recent Activities */}
+            <Card className="bg-white/90 backdrop-blur-sm border-0 shadow-lg">
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-lg md:text-xl">Recent Activities</CardTitle>
+                  <Badge className="bg-blue-100 text-blue-700 text-xs">Live</Badge>
                 </div>
               </CardHeader>
-              <CardContent className="p-6">
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  {[
-                    { href: "/dashboard/admin/users", icon: Users, label: "Manage Users", color: "blue" },
-                    { href: "/dashboard/admin/analytics", icon: BarChart3, label: "View Analytics", color: "emerald" },
-                    { href: "/dashboard/admin/logs", icon: Activity, label: "System Logs", color: "orange" },
-                    { href: "/dashboard/admin/settings", icon: Settings, label: "System Settings", color: "purple" },
-                  ].map((action, index) => (
-                    <Link key={index} href={action.href}>
-                      <Button
-                        variant="outline"
-                        className="w-full h-20 flex flex-col items-center justify-center space-y-2 hover:bg-blue-50 hover:border-blue-200 transition-all duration-300 bg-gradient-to-br from-white to-gray-50 border-2"
-                      >
-                        <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center">
-                          <action.icon className="h-4 w-4 text-blue-600" />
-                        </div>
-                        <span className="font-semibold text-gray-700 text-center text-sm">{action.label}</span>
-                      </Button>
-                    </Link>
+              <CardContent>
+                <div className="space-y-2">
+                  {data.recentActivities.slice(0, 5).map((activity: any, index: number) => (
+                    <div
+                      key={index}
+                      className="flex items-center justify-between p-3 rounded-lg bg-gray-50 hover:bg-blue-50 transition-all"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-gray-900 truncate">{activity.title}</p>
+                        <p className="text-xs text-gray-500">
+                          {new Date(activity.time).toLocaleString()}
+                        </p>
+                      </div>
+                      <Badge className={`${getStatusColor(activity.status)} text-xs ml-2`}>
+                        {activity.status}
+                      </Badge>
+                    </div>
                   ))}
                 </div>
               </CardContent>
             </Card>
+
+            {/* System Metrics - Horizontal Scroll on Mobile */}
+            <div className="overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0">
+              <div className="flex md:grid md:grid-cols-3 gap-3 min-w-max md:min-w-0">
+                {[
+                  { title: "Companies", value: data.stats.totalCompanies, icon: Building2, link: "/dashboard/admin/analytics" },
+                  { title: "Job Opportunities", value: data.stats.totalOpportunities, icon: Briefcase, link: "/dashboard/admin/analytics" },
+                  { title: "Teachers", value: data.stats.totalTeachers, icon: Users, link: "/dashboard/admin/users?role=teacher" },
+                ].map((metric, index) => (
+                  <Link key={index} href={metric.link} className="min-w-[200px] md:min-w-0">
+                    <Card className="bg-white/90 backdrop-blur-sm border-0 shadow-lg hover:shadow-xl transition-all cursor-pointer">
+                      <CardContent className="p-4">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-sm text-gray-600 mb-1">{metric.title}</p>
+                            <p className="text-2xl font-bold text-blue-600">{metric.value}</p>
+                          </div>
+                          <div className="w-12 h-12 rounded-xl bg-blue-100 flex items-center justify-center">
+                            <metric.icon className="h-6 w-6 text-blue-600" />
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </Link>
+                ))}
+              </div>
+            </div>
           </div>
         </div>
       </DashboardLayout>

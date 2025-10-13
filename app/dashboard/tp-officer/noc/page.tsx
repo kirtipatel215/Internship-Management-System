@@ -95,7 +95,7 @@ export default function TPOfficerNOC() {
       setLoading(true)
       setError(null)
 
-      console.log("[v0] 🔄 Fetching NOC requests for TP Officer...")
+      console.log("[v0] 📄 Fetching NOC requests for TP Officer...")
 
       const nocData = await getAllNOCRequests()
 
@@ -254,7 +254,7 @@ export default function TPOfficerNOC() {
 
       const approverId = currentUser?.id || "tp_officer_1"
 
-      console.log(`[v0] 🔄 TP Officer ${action === "approve" ? "approving" : "rejecting"} NOC request ${nocId}`)
+      console.log(`[v0] 📄 TP Officer ${action === "approve" ? "approving" : "rejecting"} NOC request ${nocId}`)
 
       const result = await updateNOCStatus(
         nocId,
@@ -441,19 +441,19 @@ export default function TPOfficerNOC() {
           </Card>
         </div>
 
-        {/* Filters - Horizontal scrolling on mobile */}
-        <div className="mb-4 flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
-          <div className="relative min-w-[200px] flex-1 sm:max-w-xs">
+        {/* Filters - Stacked on mobile, horizontal on larger screens */}
+        <div className="mb-4 flex flex-col sm:flex-row gap-3 sm:items-center">
+          <div className="relative flex-1 sm:max-w-xs">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
             <Input
               placeholder="Search students, companies..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9"
+              className="pl-9 w-full"
             />
           </div>
           <Select value={filterStatus} onValueChange={setFilterStatus}>
-            <SelectTrigger className="min-w-[180px] w-auto">
+            <SelectTrigger className="w-full sm:w-[220px]">
               <SelectValue placeholder="Filter by status" />
             </SelectTrigger>
             <SelectContent>
@@ -747,17 +747,6 @@ export default function TPOfficerNOC() {
           )}
         </div>
       </div>
-
-      {/* Custom Styles for Scrollbar Hide */}
-      <style jsx global>{`
-        .scrollbar-hide::-webkit-scrollbar {
-          display: none;
-        }
-        .scrollbar-hide {
-          -ms-overflow-style: none;
-          scrollbar-width: none;
-        }
-      `}</style>
     </DashboardLayout>
   )
 }

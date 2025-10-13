@@ -3779,65 +3779,7 @@ export const createUser = async (userData: any) => {
   }
 }
 
-export const updateUser = async (userId: string, updates: any) => {
-  try {
-    console.log("✏️ Updating user:", userId, updates)
 
-    if (!userId) {
-      return {
-        success: false,
-        error: "User ID is required"
-      }
-    }
-
-    if (!supabase) {
-      console.log("⚠️ Supabase unavailable, simulating update")
-      return { success: true }
-    }
-
-    const updateData: any = {
-      updated_at: new Date().toISOString()
-    }
-
-    // Only update fields that are provided
-    if (updates.name) updateData.name = updates.name
-    if (updates.email) updateData.email = updates.email
-    if (updates.phone !== undefined) updateData.phone = updates.phone
-    if (updates.department !== undefined) updateData.department = updates.department
-    if (updates.roll_number !== undefined) updateData.roll_number = updates.roll_number
-    if (updates.employee_id !== undefined) updateData.employee_id = updates.employee_id
-    if (updates.designation !== undefined) updateData.designation = updates.designation
-    if (updates.is_active !== undefined) updateData.is_active = updates.is_active
-
-    const { data, error } = await supabase
-      .from("users")
-      .update(updateData)
-      .eq("id", userId)
-      .select()
-      .single()
-
-    if (error) {
-      console.error("❌ Error updating user:", error)
-      return {
-        success: false,
-        error: error.message || "Failed to update user"
-      }
-    }
-
-    console.log("✅ User updated successfully:", data)
-    clearDataCache("all-users")
-    clearDataCache(`user-${userId}`)
-    clearDataCache("admin-dashboard")
-
-    return { success: true, data }
-  } catch (err: any) {
-    console.error("💥 Error updating user:", err)
-    return {
-      success: false,
-      error: err.message || "Failed to update user"
-    }
-  }
-}
 
 export const deleteUser = async (userId: string) => {
   try {
@@ -4496,3 +4438,137 @@ const getMockTeacherNotifications = () => [
     relatedId: 8,
   },
 ]
+// Add this to your data.ts file - Updated functions for special roles support
+
+export const updateUser = async (userId: string, updates: any) => {
+  try {
+    console.log("✏️ Updating user:", userId)
+    console.log("📋 Updates received:", updates)
+
+    if (!userId) {
+      return {
+        success: false,
+        error: "User ID is required"
+      }
+    }
+
+    if (!supabase) {
+      console.log("⚠️ Supabase unavailable, simulating update")
+      return { success: true }
+    }
+
+    const updateData: any = {
+      updated_at: new Date().toISOString()
+    }
+
+    // Only update fields that are provided
+    if (updates.name) updateData.name = updates.name
+    if (updates.email) updateData.email = updates.email
+    if (updates.phone !== undefined) updateData.phone = updates.phone
+    if (updates.department !== undefined) updateData.department = updates.department
+    if (updates.roll_number !== undefined) updateData.roll_number = updates.roll_number
+    if (updates.employee_id !== undefined) updateData.employee_id = updates.employee_id
+    if (updates.designation !== undefined) updateData.designation = updates.designation
+    if (updates.is_active !== undefined) updateData.is_active = updates.is_active
+    if (updates.role !== undefined) updateData.role = updates.role
+    
+    // Handle special roles - ALWAYS process this field
+    if (updates.special_roles !== undefined) {
+      if (Array.isArray(updates.special_roles)) {
+        if (updates.special_roles.length > 0) {
+          // Store as JSON string
+          updateData.special_roles = JSON.stringify(updates.special_roles)
+          console.log("✅ Setting special_roles to:", updateData.special_roles)
+        } else {
+          // Empty array means no special roles
+          updateData.special_roles = null
+          console.log("✅ Clearing special_roles (set to null)")
+        }
+      } else {
+        // If not an array, set to null
+        updateData.special_roles = null
+        console.log("⚠️ Invalid special_roles format, setting to null")
+      }
+    }
+
+    console.log("📤 Final update data being sent to database:", updateData)
+
+    const { data, error } = await supabase
+      .from("users")
+      .update(updateData)
+      .eq("id", userId)
+      .select()
+      .single()
+
+    if (error) {
+      console.error("❌ Database error:", error)
+      return {
+        success: false,
+        error: error.message || "Failed to update user"
+      }
+    }
+
+    console.log("✅ User updated successfully in database:", data)
+    
+    // Clear caches
+    clearDataCache("all-users")
+    clearDataCache(`user-${userId}`)
+    clearDataCache("admin-dashboard")
+
+    return { success: true, data }
+  } catch (err: any) {
+    console.error("💥 Unexpected error:", err)
+    return {
+      success: false,
+      error: err.message || "Failed to update user"
+    }
+  }
+}
+
+// Helper function to check if user has special role access
+export const hasSpecialRoleAccess = (user: any, requiredRole: string): boolean => {
+  if (!user) return false
+  
+  // Check if primary role matches
+  if (user.role === requiredRole) return true
+  
+  // Check if user has special role permissions
+  if (user.special_roles) {
+    try {
+      const specialRoles = typeof user.special_roles === 'string' 
+        ? JSON.parse(user.special_roles) 
+        : user.special_roles
+      
+      if (Array.isArray(specialRoles) && specialRoles.includes(requiredRole)) {
+        return true
+      }
+    } catch (e) {
+      console.error("Error parsing special roles:", e)
+    }
+  }
+  
+  return false
+}
+
+// Helper function to get all accessible roles for a user
+export const getUserAccessibleRoles = (user: any): string[] => {
+  if (!user) return []
+  
+  const roles = [user.role] // Always include primary role
+  
+  if (user.special_roles) {
+    try {
+      const specialRoles = typeof user.special_roles === 'string' 
+        ? JSON.parse(user.special_roles) 
+        : user.special_roles
+      
+      if (Array.isArray(specialRoles)) {
+        roles.push(...specialRoles)
+      }
+    } catch (e) {
+      console.error("Error parsing special roles:", e)
+    }
+  }
+  
+  return [...new Set(roles)] // Remove duplicates
+}
