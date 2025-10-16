@@ -251,7 +251,7 @@ export default function TeacherNOC() {
         {/* Header */}
         <div className="flex flex-col gap-4 mb-6">
           <div>
-            <h1 className="text-2xl md:text-3xl font-bold text-gray-900">NOC Academic Approval</h1>
+            <h1 className="text-2xl md:text-3xl font-bold text-gray-900">NOC Approval</h1>
             <p className="text-sm md:text-base text-gray-600">Review and provide academic approval for student internship requests</p>
           </div>
           

@@ -1239,7 +1239,7 @@ export async function updateReportStatusEnhanced(
 
 export async function getTeacherDashboardData(teacherId: string) {
   try {
-    console.log("[Teacher Dashboard] Fetching data for teacher:", teacherId)
+    console.log("[Teacher Dashboard] 🔄 Fetching data for teacher:", teacherId)
 
     if (!supabase) {
       console.log("[Teacher Dashboard] No Supabase, using mock data")
@@ -1280,137 +1280,222 @@ export async function getTeacherDashboardData(teacherId: string) {
             roll_number: a.users.roll_number,
             department: a.users.department
           }))
-        console.log(`[Teacher Dashboard] Found ${studentIds.length} assigned students`)
+        console.log(`[Teacher Dashboard] ✅ Found ${studentIds.length} assigned students`)
       } else {
         // Fallback: Get all students if no assignments
-        console.log("[Teacher Dashboard] No assignments found, fetching all students")
+        console.log("[Teacher Dashboard] ⚠️ No assignments found, fetching all students")
         const { data: allStudents, error: studentsError } = await supabase
           .from("users")
           .select("id, name, email, roll_number, department")
           .eq("role", "student")
           .eq("is_active", true)
-          .limit(50)
+          .limit(100)
 
         if (!studentsError && allStudents) {
           studentIds = allStudents.map(s => s.id)
           studentsData = allStudents
-          console.log(`[Teacher Dashboard] Found ${studentIds.length} total students (fallback)`)
+          console.log(`[Teacher Dashboard] ✅ Found ${studentIds.length} total students (fallback)`)
         }
       }
     } catch (error) {
-      console.error("[Teacher Dashboard] Error fetching students:", error)
+      console.error("[Teacher Dashboard] ❌ Error fetching students:", error)
+    }
+
+    // If no students, return empty dashboard
+    if (studentIds.length === 0) {
+      console.log("[Teacher Dashboard] ⚠️ No students found")
+      return {
+        totalStudents: 0,
+        pendingReports: 0,
+        pendingCertificates: 0,
+        pendingNOCRequests: 0,
+        totalReports: 0,
+        approvedReports: 0,
+        totalCertificates: 0,
+        approvedCertificates: 0,
+        reportsThisWeek: 0,
+        certificatesThisMonth: 0,
+        students: [],
+        recentReports: [],
+        recentCertificates: [],
+      }
     }
 
     // ======================
-    // 2. GET WEEKLY REPORTS
+    // 2. GET WEEKLY REPORTS WITH DIRECT WHERE CONDITIONS
     // ======================
-    let allReports: any[] = []
+    let totalReportsCount = 0
     let pendingReportsCount = 0
+    let approvedReportsCount = 0
     let recentReports: any[] = []
-
-    if (studentIds.length > 0) {
-      try {
-        const { data: reports, error: reportsError } = await supabase
-          .from("weekly_reports")
-          .select(`
-            id,
-            student_id,
-            student_name,
-            student_email,
-            week_number,
-            title,
-            description,
-            status,
-            submitted_date,
-            created_at
-          `)
-          .in("student_id", studentIds)
-          .order("submitted_date", { ascending: false })
-
-        if (!reportsError && reports) {
-          allReports = reports
-          pendingReportsCount = reports.filter(r => r.status === "pending").length
-          recentReports = reports.slice(0, 10)
-          console.log(`[Teacher Dashboard] Found ${reports.length} reports, ${pendingReportsCount} pending`)
-        }
-      } catch (error) {
-        console.error("[Teacher Dashboard] Error fetching reports:", error)
-      }
-    }
-
-    // ======================
-    // 3. GET CERTIFICATES
-    // ======================
-    let allCertificates: any[] = []
-    let pendingCertificatesCount = 0
-    let recentCertificates: any[] = []
-
-    if (studentIds.length > 0) {
-      try {
-        const { data: certificates, error: certError } = await supabase
-          .from("certificates")
-          .select(`
-            id,
-            student_id,
-            student_name,
-            student_email,
-            title,
-            certificate_type,
-            status,
-            upload_date,
-            created_at
-          `)
-          .in("student_id", studentIds)
-          .order("created_at", { ascending: false })
-
-        if (!certError && certificates) {
-          allCertificates = certificates
-          pendingCertificatesCount = certificates.filter(c => c.status === "pending").length
-          recentCertificates = certificates.slice(0, 10)
-          console.log(`[Teacher Dashboard] Found ${certificates.length} certificates, ${pendingCertificatesCount} pending`)
-        }
-      } catch (error) {
-        console.error("[Teacher Dashboard] Error fetching certificates:", error)
-      }
-    }
-
-    // ======================
-    // 4. GET NOC REQUESTS (Teacher Approval Stage)
-    // ======================
-    let pendingNOCCount = 0
-    let allNOCs: any[] = []
+    let reportsThisWeek = 0
 
     try {
-      const { data: nocs, error: nocError } = await supabase
-        .from("noc_requests")
+      // Get total reports count
+      const { count: totalCount } = await supabase
+        .from("weekly_reports")
+        .select("*", { count: "exact", head: true })
+        .in("student_id", studentIds)
+
+      totalReportsCount = totalCount || 0
+
+      // Get PENDING reports count with WHERE condition
+      const { count: pendingCount } = await supabase
+        .from("weekly_reports")
+        .select("*", { count: "exact", head: true })
+        .in("student_id", studentIds)
+        .eq("status", "pending")
+
+      pendingReportsCount = pendingCount || 0
+
+      // Get APPROVED reports count with WHERE condition
+      const { count: approvedCount } = await supabase
+        .from("weekly_reports")
+        .select("*", { count: "exact", head: true })
+        .in("student_id", studentIds)
+        .eq("status", "approved")
+
+      approvedReportsCount = approvedCount || 0
+
+      // Get recent reports for display
+      const { data: reportsData } = await supabase
+        .from("weekly_reports")
         .select(`
           id,
           student_id,
           student_name,
           student_email,
-          company_name,
-          position,
+          week_number,
+          title,
+          description,
           status,
           submitted_date,
-          tp_approved_date
+          created_at,
+          reviewed_date
         `)
-        .eq("status", "pending_teacher_approval")
-        .order("tp_approved_date", { ascending: false })
+        .in("student_id", studentIds)
+        .order("submitted_date", { ascending: false })
+        .limit(10)
 
-      if (!nocError && nocs) {
-        allNOCs = nocs
-        pendingNOCCount = nocs.length
-        console.log(`[Teacher Dashboard] Found ${pendingNOCCount} NOCs pending teacher approval`)
-      }
+      recentReports = reportsData || []
+
+      // Reports this week (last 7 days) with WHERE condition
+      const oneWeekAgo = new Date()
+      oneWeekAgo.setDate(oneWeekAgo.getDate() - 7)
+      const weekAgoISO = oneWeekAgo.toISOString()
+
+      const { count: thisWeekCount } = await supabase
+        .from("weekly_reports")
+        .select("*", { count: "exact", head: true })
+        .in("student_id", studentIds)
+        .gte("submitted_date", weekAgoISO)
+
+      reportsThisWeek = thisWeekCount || 0
+
+      console.log(`[Teacher Dashboard] 📊 Reports: total=${totalReportsCount}, pending=${pendingReportsCount}, approved=${approvedReportsCount}, thisWeek=${reportsThisWeek}`)
     } catch (error) {
-      console.error("[Teacher Dashboard] Error fetching NOCs:", error)
+      console.error("[Teacher Dashboard] ❌ Error fetching reports:", error)
     }
 
     // ======================
-    // 5. CONSTRUCT DASHBOARD DATA
+    // 3. GET CERTIFICATES WITH DIRECT WHERE CONDITIONS
+    // ======================
+    let totalCertificatesCount = 0
+    let pendingCertificatesCount = 0
+    let approvedCertificatesCount = 0
+    let recentCertificates: any[] = []
+    let certificatesThisMonth = 0
+
+    try {
+      // Get total certificates count
+      const { count: totalCertCount } = await supabase
+        .from("certificates")
+        .select("*", { count: "exact", head: true })
+        .in("student_id", studentIds)
+
+      totalCertificatesCount = totalCertCount || 0
+
+      // Get PENDING certificates count with WHERE condition
+      const { count: pendingCertCount } = await supabase
+        .from("certificates")
+        .select("*", { count: "exact", head: true })
+        .in("student_id", studentIds)
+        .eq("status", "pending")
+
+      pendingCertificatesCount = pendingCertCount || 0
+
+      // Get APPROVED certificates count with WHERE condition
+      const { count: approvedCertCount } = await supabase
+        .from("certificates")
+        .select("*", { count: "exact", head: true })
+        .in("student_id", studentIds)
+        .eq("status", "approved")
+
+      approvedCertificatesCount = approvedCertCount || 0
+
+      // Get recent certificates for display
+      const { data: certificatesData } = await supabase
+        .from("certificates")
+        .select(`
+          id,
+          student_id,
+          student_name,
+          student_email,
+          title,
+          certificate_type,
+          status,
+          upload_date,
+          created_at,
+          approved_date
+        `)
+        .in("student_id", studentIds)
+        .order("created_at", { ascending: false })
+        .limit(10)
+
+      recentCertificates = certificatesData || []
+
+      // Certificates this month (last 30 days) with WHERE condition
+      const oneMonthAgo = new Date()
+      oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1)
+      const monthAgoISO = oneMonthAgo.toISOString()
+
+      const { count: thisMonthCount } = await supabase
+        .from("certificates")
+        .select("*", { count: "exact", head: true })
+        .in("student_id", studentIds)
+        .gte("upload_date", monthAgoISO)
+
+      certificatesThisMonth = thisMonthCount || 0
+
+      console.log(`[Teacher Dashboard] 📜 Certificates: total=${totalCertificatesCount}, pending=${pendingCertificatesCount}, approved=${approvedCertificatesCount}, thisMonth=${certificatesThisMonth}`)
+    } catch (error) {
+      console.error("[Teacher Dashboard] ❌ Error fetching certificates:", error)
+    }
+
+    // ======================
+    // 4. GET NOC REQUESTS WITH DIRECT WHERE CONDITION
+    // ======================
+    let pendingNOCCount = 0
+
+    try {
+      // Get pending NOC requests count with WHERE condition
+      const { count: nocCount } = await supabase
+        .from("noc_requests")
+        .select("*", { count: "exact", head: true })
+        .eq("status", "pending_teacher_approval")
+
+      pendingNOCCount = nocCount || 0
+
+      console.log(`[Teacher Dashboard] 📋 NOC Requests: pending=${pendingNOCCount}`)
+    } catch (error) {
+      console.error("[Teacher Dashboard] ❌ Error fetching NOCs:", error)
+    }
+
+    // ======================
+    // 5. CONSTRUCT DASHBOARD DATA WITH CORRECT COUNTS
     // ======================
     const dashboardData = {
-      // Core stats
+      // Core stats - ALL FROM DATABASE WHERE CONDITIONS
       totalStudents: studentsData.length,
       pendingReports: pendingReportsCount,
       pendingCertificates: pendingCertificatesCount,
@@ -1421,31 +1506,28 @@ export async function getTeacherDashboardData(teacherId: string) {
       recentReports: recentReports,
       recentCertificates: recentCertificates,
       
-      // Additional stats
-      totalReports: allReports.length,
-      approvedReports: allReports.filter(r => r.status === "approved").length,
-      totalCertificates: allCertificates.length,
-      approvedCertificates: allCertificates.filter(c => c.status === "approved").length,
+      // Additional stats - ALL FROM DATABASE WHERE CONDITIONS
+      totalReports: totalReportsCount,
+      approvedReports: approvedReportsCount,
+      totalCertificates: totalCertificatesCount,
+      approvedCertificates: approvedCertificatesCount,
 
-      // For analytics
-      reportsThisWeek: allReports.filter(r => {
-        const weekAgo = new Date()
-        weekAgo.setDate(weekAgo.getDate() - 7)
-        return new Date(r.submitted_date) > weekAgo
-      }).length,
-
-      certificatesThisMonth: allCertificates.filter(c => {
-        const monthAgo = new Date()
-        monthAgo.setMonth(monthAgo.getMonth() - 1)
-        return new Date(c.created_at) > monthAgo
-      }).length,
+      // For analytics - ALL FROM DATABASE WHERE CONDITIONS
+      reportsThisWeek: reportsThisWeek,
+      certificatesThisMonth: certificatesThisMonth,
     }
 
     console.log("[Teacher Dashboard] ✅ Dashboard data compiled successfully:", {
       students: dashboardData.totalStudents,
       reports: dashboardData.totalReports,
+      pendingReports: dashboardData.pendingReports,
+      approvedReports: dashboardData.approvedReports,
       certificates: dashboardData.totalCertificates,
-      pendingNOCs: dashboardData.pendingNOCRequests
+      pendingCertificates: dashboardData.pendingCertificates,
+      approvedCertificates: dashboardData.approvedCertificates,
+      pendingNOCs: dashboardData.pendingNOCRequests,
+      reportsThisWeek: dashboardData.reportsThisWeek,
+      certificatesThisMonth: dashboardData.certificatesThisMonth,
     })
 
     return dashboardData
@@ -1455,6 +1537,7 @@ export async function getTeacherDashboardData(teacherId: string) {
     return getMockTeacherDashboardData(teacherId)
   }
 }
+
 
 export const clearTeacherDashboardCache = (teacherId?: string) => {
   if (teacherId) {

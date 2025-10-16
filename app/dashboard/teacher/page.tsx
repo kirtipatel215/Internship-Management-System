@@ -23,7 +23,6 @@ import {
   AlertCircle,
   Loader2,
   RefreshCw,
-  User,
   FileCheck,
   Database,
 } from "lucide-react"
@@ -56,6 +55,7 @@ interface TeacherDashboardData {
     student_id: string
     student_name: string
     created_at: string
+    submitted_date?: string
     status: string
     week_number?: number
   }>
@@ -65,7 +65,9 @@ interface TeacherDashboardData {
     student_id: string
     student_name: string
     created_at: string
+    upload_date?: string
     status: string
+    certificate_type?: string
   }>
 }
 
@@ -88,6 +90,7 @@ const getStatusColor = (status: string): string => {
     case "submitted":
       return "bg-yellow-100 text-yellow-800 border-yellow-200"
     case "rejected":
+    case "revision_required":
       return "bg-red-100 text-red-800 border-red-200"
     default:
       return "bg-gray-100 text-gray-800 border-gray-200"
@@ -162,7 +165,15 @@ export default function TeacherDashboard() {
         recentCertificates: Array.isArray(data.recentCertificates) ? data.recentCertificates : [],
       }
 
-      console.log("✅ Dashboard data loaded successfully")
+      console.log("✅ Dashboard data loaded:", {
+        students: sanitizedData.totalStudents,
+        reports: sanitizedData.totalReports,
+        pendingReports: sanitizedData.pendingReports,
+        certificates: sanitizedData.totalCertificates,
+        pendingCerts: sanitizedData.pendingCertificates,
+        pendingNOCs: sanitizedData.pendingNOCRequests
+      })
+      
       setDashboardData(sanitizedData)
       setLastRefresh(new Date())
     } catch (err: any) {
@@ -346,9 +357,44 @@ export default function TeacherDashboard() {
     )
   }
 
-  const safeRecentReports = dashboardData.recentReports || []
-  const safeRecentCertificates = dashboardData.recentCertificates || []
-  const safeStudents = dashboardData.students || []
+  const safeRecentReports = Array.isArray(dashboardData.recentReports) ? dashboardData.recentReports : []
+  const safeRecentCertificates = Array.isArray(dashboardData.recentCertificates) ? dashboardData.recentCertificates : []
+  const safeStudents = Array.isArray(dashboardData.students) ? dashboardData.students : []
+
+  // Combine and sort recent activities correctly
+  const recentActivities = [
+    ...safeRecentReports.map((report) => ({
+      id: `report-${report.id}`,
+      type: "report",
+      title: `${report.title || 'Weekly Report'} - ${report.student_name || 'Student'}`,
+      time: report.submitted_date || report.created_at,
+      status: report.status || 'pending',
+      student_id: report.student_id,
+      student_name: report.student_name,
+      week_number: report.week_number,
+      href: "/dashboard/teacher/reports",
+    })),
+    ...safeRecentCertificates.map((cert) => ({
+      id: `certificate-${cert.id}`,
+      type: "certificate",
+      title: `${cert.title || 'Certificate'} - ${cert.student_name || 'Student'}`,
+      time: cert.upload_date || cert.created_at,
+      status: cert.status || 'pending',
+      student_id: cert.student_id,
+      student_name: cert.student_name,
+      certificate_type: cert.certificate_type,
+      href: "/dashboard/teacher/certificates",
+    })),
+  ]
+    .filter(activity => activity.time) // Filter out activities without timestamps
+    .sort((a, b) => {
+      const timeA = new Date(a.time).getTime()
+      const timeB = new Date(b.time).getTime()
+      return timeB - timeA // Most recent first
+    })
+    .slice(0, 10)
+
+  console.log("📋 Recent activities generated:", recentActivities.length)
 
   const stats = [
     {
@@ -397,29 +443,6 @@ export default function TeacherDashboard() {
       href: "/dashboard/teacher/certificates",
     },
   ]
-
-  const recentActivities = [
-    ...safeRecentReports.map((report) => ({
-      id: `report-${report.id}`,
-      type: "report",
-      title: `${report.title} - ${report.student_name}`,
-      time: report.created_at,
-      status: report.status,
-      student_id: report.student_id,
-      href: "/dashboard/teacher/reports",
-    })),
-    ...safeRecentCertificates.map((cert) => ({
-      id: `certificate-${cert.id}`,
-      type: "certificate",
-      title: `${cert.title} - ${cert.student_name}`,
-      time: cert.created_at,
-      status: cert.status,
-      student_id: cert.student_id,
-      href: "/dashboard/teacher/certificates",
-    })),
-  ]
-    .sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime())
-    .slice(0, 10)
 
   return (
     <AuthGuard allowedRoles={["teacher"]}>
@@ -494,8 +517,45 @@ export default function TeacherDashboard() {
               </div>
             </div>
 
-            {/* Mobile-Optimized Stats Cards - Now Clickable */}
-            <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 lg:gap-6">
+            {/* Mobile-Optimized Stats Cards - Horizontal Scroll */}
+            <div className="lg:hidden">
+              <div className="overflow-x-auto -mx-3 px-3 pb-2 scrollbar-hide">
+                <div className="flex gap-3 min-w-max">
+                  {stats.map((stat, index) => (
+                    <Link key={index} href={stat.href} className="block w-40 flex-shrink-0">
+                      <Card className="hover:shadow-lg active:scale-95 transition-all duration-200 cursor-pointer hover:border-blue-300 h-full">
+                        <CardHeader className="flex flex-row items-center justify-between space-y-0 p-3 pb-2">
+                          <CardTitle className="text-xs font-medium text-gray-600 leading-tight line-clamp-2">
+                            {stat.title}
+                          </CardTitle>
+                          <div className={`w-8 h-8 rounded-lg bg-${stat.color}-100 flex items-center justify-center flex-shrink-0 ml-2`}>
+                            <stat.icon className={`h-4 w-4 text-${stat.color}-600`} />
+                          </div>
+                        </CardHeader>
+                        <CardContent className="p-3 pt-0">
+                          <div className={`text-2xl font-bold text-${stat.color}-600 mb-1`}>
+                            {stat.value}
+                          </div>
+                          <div className="flex flex-col gap-0.5">
+                            <p className="text-xs text-gray-500 truncate">{stat.subtitle}</p>
+                            <span className="text-xs font-medium text-gray-600 truncate">{stat.trend}</span>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    </Link>
+                  ))}
+                </div>
+              </div>
+              {/* Scroll indicator */}
+              <div className="flex justify-center gap-1 mt-2">
+                {stats.map((_, index) => (
+                  <div key={index} className="w-1.5 h-1.5 rounded-full bg-gray-300" />
+                ))}
+              </div>
+            </div>
+
+            {/* Desktop Stats Grid */}
+            <div className="hidden lg:grid lg:grid-cols-5 lg:gap-6">
               {stats.map((stat, index) => (
                 <Link key={index} href={stat.href} className="block">
                   <Card className="hover:shadow-lg active:scale-95 transition-all duration-200 cursor-pointer hover:border-blue-300">
@@ -515,7 +575,6 @@ export default function TeacherDashboard() {
                         <p className="text-xs text-gray-500 truncate">{stat.subtitle}</p>
                         <span className="text-xs font-medium text-gray-600 truncate">{stat.trend}</span>
                       </div>
-                      {/* Desktop "View" indicator */}
                       <div className="hidden lg:flex items-center text-xs text-blue-600 mt-2">
                         <span>View details</span>
                         <ArrowRight className="h-3 w-3 ml-1" />
@@ -536,7 +595,7 @@ export default function TeacherDashboard() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="p-3">
-                  <div className="flex gap-3 overflow-x-auto pb-2 -mx-1 px-1">
+                  <div className="flex gap-3 overflow-x-auto pb-2 -mx-1 px-1 scrollbar-hide">
                     {[
                       {
                         href: "/dashboard/teacher/students",
@@ -548,7 +607,7 @@ export default function TeacherDashboard() {
                       {
                         href: "/dashboard/teacher/noc",
                         icon: FileCheck,
-                        label: "NOC Approvals",
+                        label: "NOC",
                         color: "purple",
                         count: dashboardData.pendingNOCRequests,
                       },
@@ -628,8 +687,7 @@ export default function TeacherDashboard() {
                             <div className="flex-1 min-w-0">
                               <p className="text-sm font-semibold text-gray-900">{activity.title}</p>
                               <p className="text-sm text-gray-600">
-                                {new Date(activity.time).toLocaleDateString()} •{" "}
-                                {new Date(activity.time).toLocaleTimeString()}
+                                {new Date(activity.time).toLocaleDateString()} • {new Date(activity.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                               </p>
                             </div>
                             <Badge className={`${getStatusColor(activity.status)} px-3 py-1 text-xs font-medium capitalize`}>
@@ -838,12 +896,16 @@ export default function TeacherDashboard() {
                               )}
                             </div>
                             <div className="flex-1 min-w-0">
-                              <p className="text-sm font-semibold text-gray-900 truncate">{activity.title}</p>
+                              <p className="text-sm font-semibold text-gray-900 line-clamp-1">
+                                {activity.student_name || 'Student'}
+                                {activity.type === "report" && activity.week_number && ` - Week ${activity.week_number}`}
+                                {activity.type === "certificate" && activity.certificate_type && ` - ${activity.certificate_type}`}
+                              </p>
                               <p className="text-xs text-gray-600">
                                 {new Date(activity.time).toLocaleDateString()}
                               </p>
                             </div>
-                            <Badge className={`${getStatusColor(activity.status)} text-xs px-2 py-0.5 capitalize`}>
+                            <Badge className={`${getStatusColor(activity.status)} text-xs px-2 py-0.5 capitalize flex-shrink-0`}>
                               {activity.status}
                             </Badge>
                           </div>
