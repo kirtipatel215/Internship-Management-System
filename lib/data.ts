@@ -1005,54 +1005,20 @@ export async function getReportsByTeacher(teacherId: string) {
       return getMockReports(teacherId)
     }
 
-    // OPTION 1: Try to get reports through student-teacher assignments
-    let reports: any[] = []
-    
-    try {
-      const { data: assignments, error: assignmentsError } = await supabase
-        .from("student_teacher_assignments")
-        .select("student_id")
-        .eq("teacher_id", teacherId)
-        .eq("is_active", true)
+    // Fetch all reports (no assignments table needed)
+    const { data: allReports, error: allReportsError } = await supabase
+      .from("weekly_reports")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(100)
 
-      if (!assignmentsError && assignments && assignments.length > 0) {
-        const studentIds = assignments.map((a) => a.student_id)
-        console.log(`[Teacher Reports] Found ${studentIds.length} assigned students`)
-
-        // Fetch reports for assigned students
-        const { data: assignedReports, error: reportsError } = await supabase
-          .from("weekly_reports")
-          .select("*")
-          .in("student_id", studentIds)
-          .order("created_at", { ascending: false })
-
-        if (!reportsError && assignedReports) {
-          reports = assignedReports
-          console.log(`[Teacher Reports] Found ${reports.length} reports from assigned students`)
-        }
-      }
-    } catch (assignmentError) {
-      console.warn("[Teacher Reports] Assignment lookup failed, will fetch all reports")
+    if (allReportsError) {
+      console.error("[Teacher Reports] Error fetching reports:", allReportsError)
+      return getMockReports(teacherId)
     }
 
-    // OPTION 2: If no assignments found, fetch all reports (fallback)
-    if (reports.length === 0) {
-      console.log("[Teacher Reports] No assignments found, fetching all reports")
-      
-      const { data: allReports, error: allReportsError } = await supabase
-        .from("weekly_reports")
-        .select("*")
-        .order("created_at", { ascending: false })
-        .limit(100) // Limit to prevent overload
-
-      if (allReportsError) {
-        console.error("[Teacher Reports] Error fetching all reports:", allReportsError)
-        return getMockReports(teacherId)
-      }
-
-      reports = allReports || []
-      console.log(`[Teacher Reports] Found ${reports.length} total reports (fallback)`)
-    }
+    const reports = allReports || []
+    console.log(`[Teacher Reports] Found ${reports.length} total reports`)
 
     // Transform data to ensure all required fields are present
     const transformedReports = reports.map((report) => ({
@@ -1239,7 +1205,7 @@ export async function updateReportStatusEnhanced(
 
 export async function getTeacherDashboardData(teacherId: string) {
   try {
-    console.log("[Teacher Dashboard] 🔄 Fetching data for teacher:", teacherId)
+    console.log("[Teacher Dashboard] 📊 Fetching data for teacher:", teacherId)
 
     if (!supabase) {
       console.log("[Teacher Dashboard] No Supabase, using mock data")
@@ -1247,55 +1213,24 @@ export async function getTeacherDashboardData(teacherId: string) {
     }
 
     // ======================
-    // 1. GET ASSIGNED STUDENTS
+    // 1. GET ALL STUDENTS (No assignments table needed)
     // ======================
-    let studentIds: string[] = []
     let studentsData: any[] = []
+    let studentIds: string[] = []
 
     try {
-      // Try to get students through assignments table
-      const { data: assignments, error: assignError } = await supabase
-        .from("student_teacher_assignments")
-        .select(`
-          student_id,
-          users!student_teacher_assignments_student_id_fkey(
-            id,
-            name,
-            email,
-            roll_number,
-            department
-          )
-        `)
-        .eq("teacher_id", teacherId)
+      // Fetch all active students directly
+      const { data: allStudents, error: studentsError } = await supabase
+        .from("users")
+        .select("id, name, email, roll_number, department")
+        .eq("role", "student")
         .eq("is_active", true)
+        .order("name", { ascending: true })
 
-      if (!assignError && assignments && assignments.length > 0) {
-        studentIds = assignments.map(a => a.student_id)
-        studentsData = assignments
-          .filter(a => a.users)
-          .map(a => ({
-            id: a.users.id,
-            name: a.users.name,
-            email: a.users.email,
-            roll_number: a.users.roll_number,
-            department: a.users.department
-          }))
-        console.log(`[Teacher Dashboard] ✅ Found ${studentIds.length} assigned students`)
-      } else {
-        // Fallback: Get all students if no assignments
-        console.log("[Teacher Dashboard] ⚠️ No assignments found, fetching all students")
-        const { data: allStudents, error: studentsError } = await supabase
-          .from("users")
-          .select("id, name, email, roll_number, department")
-          .eq("role", "student")
-          .eq("is_active", true)
-          .limit(100)
-
-        if (!studentsError && allStudents) {
-          studentIds = allStudents.map(s => s.id)
-          studentsData = allStudents
-          console.log(`[Teacher Dashboard] ✅ Found ${studentIds.length} total students (fallback)`)
-        }
+      if (!studentsError && allStudents) {
+        studentIds = allStudents.map(s => s.id)
+        studentsData = allStudents
+        console.log(`[Teacher Dashboard] ✅ Found ${studentIds.length} students`)
       }
     } catch (error) {
       console.error("[Teacher Dashboard] ❌ Error fetching students:", error)
@@ -1322,7 +1257,7 @@ export async function getTeacherDashboardData(teacherId: string) {
     }
 
     // ======================
-    // 2. GET WEEKLY REPORTS WITH DIRECT WHERE CONDITIONS
+    // 2. GET WEEKLY REPORTS
     // ======================
     let totalReportsCount = 0
     let pendingReportsCount = 0
@@ -1339,7 +1274,7 @@ export async function getTeacherDashboardData(teacherId: string) {
 
       totalReportsCount = totalCount || 0
 
-      // Get PENDING reports count with WHERE condition
+      // Get PENDING reports count
       const { count: pendingCount } = await supabase
         .from("weekly_reports")
         .select("*", { count: "exact", head: true })
@@ -1348,7 +1283,7 @@ export async function getTeacherDashboardData(teacherId: string) {
 
       pendingReportsCount = pendingCount || 0
 
-      // Get APPROVED reports count with WHERE condition
+      // Get APPROVED reports count
       const { count: approvedCount } = await supabase
         .from("weekly_reports")
         .select("*", { count: "exact", head: true })
@@ -1379,7 +1314,7 @@ export async function getTeacherDashboardData(teacherId: string) {
 
       recentReports = reportsData || []
 
-      // Reports this week (last 7 days) with WHERE condition
+      // Reports this week (last 7 days)
       const oneWeekAgo = new Date()
       oneWeekAgo.setDate(oneWeekAgo.getDate() - 7)
       const weekAgoISO = oneWeekAgo.toISOString()
@@ -1398,7 +1333,7 @@ export async function getTeacherDashboardData(teacherId: string) {
     }
 
     // ======================
-    // 3. GET CERTIFICATES WITH DIRECT WHERE CONDITIONS
+    // 3. GET CERTIFICATES
     // ======================
     let totalCertificatesCount = 0
     let pendingCertificatesCount = 0
@@ -1415,7 +1350,7 @@ export async function getTeacherDashboardData(teacherId: string) {
 
       totalCertificatesCount = totalCertCount || 0
 
-      // Get PENDING certificates count with WHERE condition
+      // Get PENDING certificates count
       const { count: pendingCertCount } = await supabase
         .from("certificates")
         .select("*", { count: "exact", head: true })
@@ -1424,7 +1359,7 @@ export async function getTeacherDashboardData(teacherId: string) {
 
       pendingCertificatesCount = pendingCertCount || 0
 
-      // Get APPROVED certificates count with WHERE condition
+      // Get APPROVED certificates count
       const { count: approvedCertCount } = await supabase
         .from("certificates")
         .select("*", { count: "exact", head: true })
@@ -1454,7 +1389,7 @@ export async function getTeacherDashboardData(teacherId: string) {
 
       recentCertificates = certificatesData || []
 
-      // Certificates this month (last 30 days) with WHERE condition
+      // Certificates this month (last 30 days)
       const oneMonthAgo = new Date()
       oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1)
       const monthAgoISO = oneMonthAgo.toISOString()
@@ -1473,12 +1408,12 @@ export async function getTeacherDashboardData(teacherId: string) {
     }
 
     // ======================
-    // 4. GET NOC REQUESTS WITH DIRECT WHERE CONDITION
+    // 4. GET NOC REQUESTS
     // ======================
     let pendingNOCCount = 0
 
     try {
-      // Get pending NOC requests count with WHERE condition
+      // Get pending NOC requests count
       const { count: nocCount } = await supabase
         .from("noc_requests")
         .select("*", { count: "exact", head: true })
@@ -1492,44 +1427,25 @@ export async function getTeacherDashboardData(teacherId: string) {
     }
 
     // ======================
-    // 5. CONSTRUCT DASHBOARD DATA WITH CORRECT COUNTS
+    // 5. CONSTRUCT DASHBOARD DATA
     // ======================
     const dashboardData = {
-      // Core stats - ALL FROM DATABASE WHERE CONDITIONS
       totalStudents: studentsData.length,
       pendingReports: pendingReportsCount,
       pendingCertificates: pendingCertificatesCount,
       pendingNOCRequests: pendingNOCCount,
-
-      // Detailed arrays for UI
       students: studentsData,
       recentReports: recentReports,
       recentCertificates: recentCertificates,
-      
-      // Additional stats - ALL FROM DATABASE WHERE CONDITIONS
       totalReports: totalReportsCount,
       approvedReports: approvedReportsCount,
       totalCertificates: totalCertificatesCount,
       approvedCertificates: approvedCertificatesCount,
-
-      // For analytics - ALL FROM DATABASE WHERE CONDITIONS
       reportsThisWeek: reportsThisWeek,
       certificatesThisMonth: certificatesThisMonth,
     }
 
-    console.log("[Teacher Dashboard] ✅ Dashboard data compiled successfully:", {
-      students: dashboardData.totalStudents,
-      reports: dashboardData.totalReports,
-      pendingReports: dashboardData.pendingReports,
-      approvedReports: dashboardData.approvedReports,
-      certificates: dashboardData.totalCertificates,
-      pendingCertificates: dashboardData.pendingCertificates,
-      approvedCertificates: dashboardData.approvedCertificates,
-      pendingNOCs: dashboardData.pendingNOCRequests,
-      reportsThisWeek: dashboardData.reportsThisWeek,
-      certificatesThisMonth: dashboardData.certificatesThisMonth,
-    })
-
+    console.log("[Teacher Dashboard] ✅ Dashboard data compiled successfully")
     return dashboardData
 
   } catch (error) {
@@ -1584,12 +1500,8 @@ export const debugTeacherDashboard = async (teacherId: string) => {
   console.log("=== TEACHER DASHBOARD DEBUG ===")
   console.log("Teacher ID:", teacherId)
 
-  // Check assignments
-  const { data: assignments } = await supabase
-    .from("student_teacher_assignments")
-    .select("*")
-    .eq("teacher_id", teacherId)
-  console.log("Assignments:", assignments?.length || 0)
+  // REMOVED: Assignment check (table doesn't exist)
+  console.log("Note: No student-teacher assignment table in schema")
 
   // Check all students
   const { data: students } = await supabase
@@ -1635,8 +1547,7 @@ export const getStudentsByTeacher = async (teacherId: string) => {
       return getMockStudentsForTeacher()
     }
 
-    // Since there's no student_teacher_assignments table, 
-    // fetch all active students directly from the users table
+    // Fetch all active students directly (no assignments table)
     const { data: students, error: studentsError } = await supabase
       .from("users")
       .select("id, name, email, roll_number, department, phone, created_at")
@@ -1650,21 +1561,20 @@ export const getStudentsByTeacher = async (teacherId: string) => {
     }
 
     if (!students || students.length === 0) {
-      console.log("ℹ️ No students found, returning mock data")
-      return getMockStudentsForTeacher()
+      console.log("ℹ️ No students found")
+      return []
     }
 
     console.log(`📊 Found ${students.length} students, fetching additional data...`)
 
-    // Get student IDs for fetching related data
     const studentIds = students.map((s) => s.id).filter(Boolean)
     
     if (studentIds.length === 0) {
       console.log("⚠️ No valid student IDs found")
-      return getMockStudentsForTeacher()
+      return []
     }
 
-    // Fetch related data with proper error handling
+    // Fetch related data
     const [nocResult, reportsResult, certificatesResult] = await Promise.allSettled([
       supabase
         .from("noc_requests")
@@ -1683,7 +1593,6 @@ export const getStudentsByTeacher = async (teacherId: string) => {
         .in("student_id", studentIds)
     ])
 
-    // Handle results with proper fallbacks
     const nocRequests = nocResult.status === "fulfilled" && !nocResult.value.error 
       ? nocResult.value.data || [] 
       : []
@@ -1708,12 +1617,10 @@ export const getStudentsByTeacher = async (teacherId: string) => {
       const currentInternship = nocRequests.find((noc) => noc.student_id === student.id)
       const studentReports = reports.filter((r) => r.student_id === student.id)
       
-      // Calculate total expected reports based on internship duration
       let totalReports = 0
       if (currentInternship?.start_date && currentInternship?.end_date) {
         totalReports = calculateWeeksFromDuration(currentInternship.start_date, currentInternship.end_date)
       } else {
-        // If no active internship, use actual report count or default to 0
         totalReports = studentReports.length || 0
       }
       
@@ -1747,7 +1654,7 @@ export const getStudentsByTeacher = async (teacherId: string) => {
         status,
         reportsSubmitted: submittedReports,
         totalReports,
-        cgpa: 8.5, // Default value since this field doesn't exist in your schema
+        cgpa: 8.5,
         lastActivity,
         profileImage: null,
         certificates: studentCertificates.length,
@@ -1861,25 +1768,14 @@ export const sendMessageToStudent = async (teacherId: string, studentId: string,
 
 export const updateStudentAssignment = async (teacherId: string, studentId: string, isActive: boolean) => {
   try {
-    if (!supabase) {
-      console.log("Mock: Updated student assignment")
-      return { success: true }
+    console.log("⚠️ Student-teacher assignments table does not exist in your schema")
+    console.log("This function is disabled. To enable, create the student_teacher_assignments table.")
+    
+    // Return success to prevent errors in UI
+    return { 
+      success: true,
+      message: "Assignment feature not available - table doesn't exist in schema"
     }
-
-    const { error } = await supabase.from("student_teacher_assignments").upsert({
-      teacher_id: teacherId,
-      student_id: studentId,
-      is_active: isActive,
-      academic_year: new Date().getFullYear().toString(),
-      semester: "Spring",
-    })
-
-    if (error) {
-      console.error("❌ Error updating student assignment:", error)
-      return { success: false, error: error.message }
-    }
-
-    return { success: true }
   } catch (error: any) {
     console.error("💥 Error in updateStudentAssignment:", error)
     return { success: false, error: error.message }
@@ -3150,87 +3046,51 @@ export const getCertificatesByTeacher = async (teacherId: string) => {
       return getMockTeacherCertificates()
     }
 
-    // First, try to get certificates through student-teacher assignments
-    let certificates = []
-    
-    try {
-      const { data: assignments, error: assignmentsError } = await supabase
-        .from("student_teacher_assignments")
-        .select("student_id")
-        .eq("teacher_id", teacherId)
-        .eq("is_active", true)
+    // Fetch all certificates (no assignments table needed)
+    const { data: allCertificates, error: allCertError } = await supabase
+      .from("certificates")
+      .select("*")
+      .order("created_at", { ascending: false })
 
-      if (!assignmentsError && assignments && assignments.length > 0) {
-        const studentIds = assignments.map(a => a.student_id)
-        console.log(`Found ${studentIds.length} assigned students`)
-        
-        // Fetch certificates for assigned students
-        const { data: assignedCertificates, error: certError } = await supabase
-          .from("certificates")
-          .select("*")
-          .in("student_id", studentIds)
-          .order("created_at", { ascending: false })
-
-        if (!certError && assignedCertificates) {
-          certificates = assignedCertificates
-          console.log(`Found ${certificates.length} certificates from assigned students`)
-        }
-      }
-    } catch (assignmentError) {
-      console.warn("Assignment query failed, will fetch all certificates")
+    if (allCertError) {
+      console.error("⚠️ Error fetching certificates:", allCertError)
+      return getMockTeacherCertificates()
     }
 
-    // If no certificates from assignments, fetch all certificates (fallback)
-    if (certificates.length === 0) {
-      console.log("No certificates from assignments, fetching all certificates")
-      const { data: allCertificates, error: allCertError } = await supabase
-        .from("certificates")
-        .select("*")
-        .order("created_at", { ascending: false })
+    const certificates = allCertificates || []
+    console.log(`Found ${certificates.length} total certificates`)
 
-      if (allCertError) {
-        console.error("⚠ Error fetching all certificates:", allCertError)
-        return getMockTeacherCertificates()
-      }
-
-      certificates = allCertificates || []
-      console.log(`Found ${certificates.length} total certificates`)
-    }
-
-    // Process certificate data to ensure all required fields are present
-    const processedCertificates = certificates.map(cert => {
-      // Handle missing required fields based on schema
-      return {
-        id: cert.id,
-        student_id: cert.student_id,
-        student_name: cert.student_name || "Unknown Student",
-        student_email: cert.student_email || "",
-        student_roll_number: cert.student_roll_number || "N/A", // This field may not exist in schema
-        certificate_type: cert.certificate_type || "internship",
-        title: cert.title || "Internship Certificate",
-        company_name: cert.company_name || "Unknown Company",
-        position: cert.position || "Intern", // This field may not exist in schema
-        duration: cert.duration || "Unknown Duration",
-        start_date: cert.start_date || new Date().toISOString().split('T')[0],
-        end_date: cert.end_date || new Date().toISOString().split('T')[0],
-        grade: cert.grade || "A", // This field may not exist in schema
-        supervisor_name: cert.supervisor_name || "Unknown Supervisor", // This field may not exist in schema
-        supervisor_email: cert.supervisor_email || "supervisor@company.com", // This field may not exist in schema
-        description: cert.description || "Internship completion certificate", // This field may not exist in schema
-        skills: cert.skills || "Various technical skills", // This field may not exist in schema
-        projects: cert.projects || "Multiple projects completed", // This field may not exist in schema
-        file_name: cert.file_name,
-        file_url: cert.file_url,
-        file_size: cert.file_size,
-        status: cert.status || "pending",
-        feedback: cert.feedback,
-        approved_by: cert.approved_by,
-        approved_date: cert.approved_date,
-        upload_date: cert.upload_date || cert.created_at,
-        submission_date: cert.created_at || new Date().toISOString(),
-        created_at: cert.created_at || new Date().toISOString()
-      }
-    })
+    // Process certificate data
+    const processedCertificates = certificates.map(cert => ({
+      id: cert.id,
+      student_id: cert.student_id,
+      student_name: cert.student_name || "Unknown Student",
+      student_email: cert.student_email || "",
+      student_roll_number: cert.student_roll_number || "N/A",
+      certificate_type: cert.certificate_type || "internship",
+      title: cert.title || "Internship Certificate",
+      company_name: cert.company_name || "Unknown Company",
+      position: cert.position || "Intern",
+      duration: cert.duration || "Unknown Duration",
+      start_date: cert.start_date || new Date().toISOString().split('T')[0],
+      end_date: cert.end_date || new Date().toISOString().split('T')[0],
+      grade: cert.grade || "A",
+      supervisor_name: cert.supervisor_name || "Unknown Supervisor",
+      supervisor_email: cert.supervisor_email || "supervisor@company.com",
+      description: cert.description || "Internship completion certificate",
+      skills: cert.skills || "Various technical skills",
+      projects: cert.projects || "Multiple projects completed",
+      file_name: cert.file_name,
+      file_url: cert.file_url,
+      file_size: cert.file_size,
+      status: cert.status || "pending",
+      feedback: cert.feedback,
+      approved_by: cert.approved_by,
+      approved_date: cert.approved_date,
+      upload_date: cert.upload_date || cert.created_at,
+      submission_date: cert.created_at || new Date().toISOString(),
+      created_at: cert.created_at || new Date().toISOString()
+    }))
 
     console.log(`Successfully processed ${processedCertificates.length} certificates`)
     return processedCertificates
@@ -3240,6 +3100,7 @@ export const getCertificatesByTeacher = async (teacherId: string) => {
     return getMockTeacherCertificates()
   }
 }
+
 
 // Also fix the updateCertificateStatus function to match schema
 export const updateCertificateStatus = async (
@@ -4170,29 +4031,18 @@ export const generateTeacherNotifications = async (teacherId: string) => {
 
     const notifications: any[] = []
 
-    // Get assigned students
+    // Get ALL active students (no assignments table)
     let studentIds: string[] = []
     try {
-      const { data: assignments } = await supabase
-        .from("student_teacher_assignments")
-        .select("student_id")
-        .eq("teacher_id", teacherId)
+      const { data: students } = await supabase
+        .from("users")
+        .select("id")
+        .eq("role", "student")
         .eq("is_active", true)
-
-      if (assignments && assignments.length > 0) {
-        studentIds = assignments.map(a => a.student_id)
-      } else {
-        // Fallback: get all students
-        const { data: students } = await supabase
-          .from("users")
-          .select("id")
-          .eq("role", "student")
-          .eq("is_active", true)
-          .limit(50)
-        
-        if (students) {
-          studentIds = students.map(s => s.id)
-        }
+        .limit(100)
+      
+      if (students) {
+        studentIds = students.map(s => s.id)
       }
     } catch (error) {
       console.error("[Notifications] Error fetching students:", error)

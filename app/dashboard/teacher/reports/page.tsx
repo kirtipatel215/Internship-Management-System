@@ -7,30 +7,27 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
 import {
   Search,
   Filter,
   FileText,
-  Eye,
-  Download,
   CheckCircle,
   XCircle,
   Clock,
   Calendar,
   User,
-  Star,
   X,
   RotateCcw,
   RefreshCw,
   Loader2,
   Trash2,
   Mail,
+  ExternalLink,
   ChevronDown,
   ChevronUp,
-  ExternalLink,
+  AlertCircle,
 } from "lucide-react"
 import { useState, useEffect } from "react"
 import { 
@@ -97,17 +94,13 @@ export default function TeacherReportsPage() {
   const [statusFilter, setStatusFilter] = useState("pending")
   const [weekFilter, setWeekFilter] = useState("all")
   const [studentFilter, setStudentFilter] = useState("all")
-  const [expandedReportId, setExpandedReportId] = useState<number | null>(null)
   const [showFilters, setShowFilters] = useState(false)
   
-  // Dialog states
-  const [selectedReport, setSelectedReport] = useState<Report | null>(null)
-  const [showReportDialog, setShowReportDialog] = useState(false)
-  const [showFilePreview, setShowFilePreview] = useState(false)
+  // Expanded report state
+  const [expandedReportId, setExpandedReportId] = useState<number | null>(null)
   const [teacherComments, setTeacherComments] = useState("")
-  const [grade, setGrade] = useState("")
-  const [rating, setRating] = useState(0)
   const [reviewLoading, setReviewLoading] = useState(false)
+  const [deleteLoading, setDeleteLoading] = useState(false)
 
   // Fetch current user and reports on component mount
   useEffect(() => {
@@ -250,16 +243,14 @@ export default function TeacherReportsPage() {
     }
   }
 
-  const handleViewReport = (report: Report) => {
-    setSelectedReport(report)
-    setTeacherComments(report.comments || "")
-    setGrade(report.grade || "")
-    setRating(0)
-    setShowReportDialog(true)
-  }
-
   const toggleReportExpansion = (reportId: number) => {
-    setExpandedReportId(expandedReportId === reportId ? null : reportId)
+    if (expandedReportId === reportId) {
+      setExpandedReportId(null)
+      setTeacherComments("")
+    } else {
+      setExpandedReportId(reportId)
+      setTeacherComments("") // Start with empty comments
+    }
   }
 
   // Update report status in database
@@ -271,13 +262,13 @@ export default function TeacherReportsPage() {
     
     try {
       setReviewLoading(true)
-      console.log('🔄 Updating report status in database:', { reportId, newStatus, teacherComments, grade })
+      console.log('🔄 Updating report status in database:', { reportId, newStatus, teacherComments })
       
       const result = await updateReportStatusEnhanced(
         reportId,
         newStatus,
         teacherComments,
-        grade,
+        undefined, // no grade
         user.id
       )
 
@@ -291,15 +282,12 @@ export default function TeacherReportsPage() {
                   ...report, 
                   status: newStatus as any,
                   comments: teacherComments,
-                  grade: grade,
                   reviewed_by: user.id,
                   reviewed_date: new Date().toISOString()
                 }
               : report
           )
         )
-        
-        setShowReportDialog(false)
         
         const actionText = newStatus === "approved" 
           ? "approved" 
@@ -308,6 +296,9 @@ export default function TeacherReportsPage() {
           : "rejected"
         
         toast.success(`Report ${actionText} successfully!`)
+        
+        setExpandedReportId(null)
+        setTeacherComments("")
         
         await fetchReports(user.id)
         
@@ -322,48 +313,21 @@ export default function TeacherReportsPage() {
     }
   }
 
-  // Download report file or generate text report
-  const handleDownloadReport = async (report: Report) => {
-    if (!report.file_url || !report.file_name) {
-      const textContent = generateReportText(report)
-      const blob = new Blob([textContent], { type: "text/plain" })
-      const url = window.URL.createObjectURL(blob)
-      const a = document.createElement("a")
-      a.href = url
-      a.download = `${report.student_name.replace(/\s+/g, "_")}_Week${report.week_number}_Report.txt`
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      window.URL.revokeObjectURL(url)
-      toast.success(`Downloaded ${report.title}`)
-      return
-    }
-
-    try {
-      console.log('⬇️ Downloading report from database:', report.file_name)
-      const result = await downloadFile(report.file_url, report.file_name)
-      
-      if (result.success) {
-        toast.success(`Downloaded ${report.file_name}`)
-      } else {
-        toast.error(result.error || 'Download failed')
-      }
-    } catch (error: any) {
-      console.error('❌ Download error:', error)
-      toast.error('Download failed')
-    }
-  }
-
   const handleDeleteReport = async (reportId: number) => {
     if (!confirm('Are you sure you want to delete this report? This action cannot be undone.')) {
       return
     }
 
     try {
+      setDeleteLoading(true)
       console.log('🗑️ Deleting report from database:', reportId)
       
       setReports(prevReports => prevReports.filter(r => r.id !== reportId))
       toast.success('Report deleted successfully!')
+      
+      if (expandedReportId === reportId) {
+        setExpandedReportId(null)
+      }
       
       if (user) {
         await fetchReports(user.id)
@@ -372,38 +336,9 @@ export default function TeacherReportsPage() {
     } catch (error: any) {
       console.error('❌ Error deleting report:', error)
       toast.error('Failed to delete report')
+    } finally {
+      setDeleteLoading(false)
     }
-  }
-
-  const generateReportText = (report: Report) => {
-    const achievementsText = Array.isArray(report.achievements) 
-      ? report.achievements.map(a => `- ${a}`).join('\n') 
-      : report.achievements || 'N/A'
-
-    return `
-Weekly Report - ${report.title}
-Student: ${report.student_name}
-Email: ${report.student_email}
-Week: ${report.week_number}
-Submission Date: ${new Date(report.submitted_date).toLocaleDateString()}
-Status: ${report.status}
-
-Description:
-${report.description}
-
-Achievements:
-${achievementsText}
-
-${report.challenges ? `Challenges:\n${report.challenges}\n` : ''}
-
-${report.next_week_plan ? `Next Week Plan:\n${report.next_week_plan}\n` : ''}
-
-${report.comments ? `Teacher Comments:\n${report.comments}\n` : ''}
-
-${report.grade ? `Grade: ${report.grade}\n` : ''}
-
-Generated on: ${new Date().toLocaleString()}
-    `.trim()
   }
 
   // Get unique values for filters
@@ -467,7 +402,7 @@ Generated on: ${new Date().toLocaleString()}
               </Button>
             </div>
 
-            {/* Mobile: Search and Filter Bar - Horizontal */}
+            {/* Mobile: Search and Filter Bar */}
             <div className="md:hidden">
               <div className="flex gap-2">
                 <div className="relative flex-1">
@@ -493,7 +428,6 @@ Generated on: ${new Date().toLocaleString()}
                 </Button>
               </div>
               
-              {/* Mobile Filters Dropdown */}
               {showFilters && (
                 <Card className="mt-2 bg-white/80 backdrop-blur-sm border-0 shadow-lg">
                   <CardContent className="p-4 space-y-3">
@@ -618,98 +552,60 @@ Generated on: ${new Date().toLocaleString()}
               </CardContent>
             </Card>
 
-            {/* Mobile: Stats Cards - Horizontal Scroll */}
+            {/* Mobile: Stats Cards - Horizontal Scroll - CLICKABLE */}
             <div className="md:hidden">
               <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide snap-x snap-mandatory">
                 {[
-                  {
-                    title: "Total",
-                    value: stats.total,
-                    icon: FileText,
-                    color: "from-blue-400 to-blue-600",
-                  },
-                  {
-                    title: "Pending",
-                    value: stats.pending,
-                    icon: Clock,
-                    color: "from-yellow-400 to-orange-500",
-                  },
-                  {
-                    title: "Approved",
-                    value: stats.approved,
-                    icon: CheckCircle,
-                    color: "from-green-400 to-emerald-600",
-                  },
-                  {
-                    title: "Revision",
-                    value: stats.needsRevision,
-                    icon: RotateCcw,
-                    color: "from-red-400 to-pink-600",
-                  },
+                  { title: "Total", value: stats.total, icon: FileText, color: "from-blue-400 to-blue-600", filter: "all" },
+                  { title: "Pending", value: stats.pending, icon: Clock, color: "from-yellow-400 to-orange-500", filter: "pending" },
+                  { title: "Approved", value: stats.approved, icon: CheckCircle, color: "from-green-400 to-emerald-600", filter: "approved" },
+                  { title: "Revision", value: stats.needsRevision, icon: RotateCcw, color: "from-red-400 to-pink-600", filter: "needs_revision" },
                 ].map((stat, index) => (
-                  <Card
+                  <button
                     key={index}
-                    className="min-w-[140px] flex-shrink-0 snap-start bg-white/80 backdrop-blur-sm border-0 shadow-lg"
+                    onClick={() => setStatusFilter(stat.filter)}
+                    className="min-w-[140px] flex-shrink-0 snap-start bg-white/80 backdrop-blur-sm border-0 shadow-lg rounded-xl hover:shadow-xl transition-shadow"
                   >
-                    <CardContent className="p-4">
+                    <div className="p-4">
                       <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${stat.color} flex items-center justify-center mb-3`}>
                         <stat.icon className="h-5 w-5 text-white" />
                       </div>
                       <div className="text-2xl font-bold text-gray-900 mb-1">{stat.value}</div>
                       <p className="text-xs text-gray-600">{stat.title}</p>
-                    </CardContent>
-                  </Card>
+                    </div>
+                  </button>
                 ))}
               </div>
             </div>
 
-            {/* Desktop: Stats Cards - Grid */}
+            {/* Desktop: Stats Cards - Grid - CLICKABLE */}
             <div className="hidden md:grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-6">
               {[
-                {
-                  title: "Total Reports",
-                  value: stats.total,
-                  icon: FileText,
-                  subtitle: "All submissions",
-                },
-                {
-                  title: "Pending Review",
-                  value: stats.pending,
-                  icon: Clock,
-                  subtitle: "Awaiting approval",
-                },
-                {
-                  title: "Approved",
-                  value: stats.approved,
-                  icon: CheckCircle,
-                  subtitle: "Successfully reviewed",
-                },
-                {
-                  title: "Need Revision",
-                  value: stats.needsRevision,
-                  icon: RotateCcw,
-                  subtitle: "Require changes",
-                },
+                { title: "Total Reports", value: stats.total, icon: FileText, subtitle: "All submissions", filter: "all" },
+                { title: "Pending Review", value: stats.pending, icon: Clock, subtitle: "Awaiting approval", filter: "pending" },
+                { title: "Approved", value: stats.approved, icon: CheckCircle, subtitle: "Successfully reviewed", filter: "approved" },
+                { title: "Need Revision", value: stats.needsRevision, icon: RotateCcw, subtitle: "Require changes", filter: "needs_revision" },
               ].map((stat, index) => (
-                <Card
+                <button
                   key={index}
-                  className="bg-white/80 backdrop-blur-sm border-0 shadow-lg hover:shadow-xl transition-all duration-300"
+                  onClick={() => setStatusFilter(stat.filter)}
+                  className="bg-white/80 backdrop-blur-sm border-0 shadow-lg hover:shadow-xl transition-all duration-300 rounded-2xl text-left w-full"
                 >
-                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium text-gray-600">{stat.title}</CardTitle>
-                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-100 to-blue-200 flex items-center justify-center">
-                      <stat.icon className="h-5 w-5 text-blue-600" />
+                  <div className="p-6">
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="text-sm font-medium text-gray-600">{stat.title}</h3>
+                      <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-100 to-blue-200 flex items-center justify-center">
+                        <stat.icon className="h-5 w-5 text-blue-600" />
+                      </div>
                     </div>
-                  </CardHeader>
-                  <CardContent>
                     <div className="text-3xl font-bold text-blue-600 mb-1">{stat.value}</div>
                     <p className="text-xs text-gray-500">{stat.subtitle}</p>
-                  </CardContent>
-                </Card>
+                  </div>
+                </button>
               ))}
             </div>
 
-            {/* Reports List */}
+            {/* Reports List - INLINE EXPANSION */}
             <div className="space-y-3 md:space-y-4">
               {filteredReports.length === 0 ? (
                 <Card className="bg-white/80 backdrop-blur-sm border-0 shadow-lg">
@@ -730,15 +626,18 @@ Generated on: ${new Date().toLocaleString()}
                       className="bg-white/80 backdrop-blur-sm border-0 shadow-lg hover:shadow-xl transition-all duration-300"
                     >
                       <CardContent className="p-3 md:p-6">
-                        {/* Minimal View */}
-                        <div className="flex items-start gap-3">
+                        {/* Minimal View - CLICKABLE */}
+                        <div 
+                          className="flex items-start gap-3 cursor-pointer"
+                          onClick={() => toggleReportExpansion(report.id)}
+                        >
                           <div className="w-10 h-10 md:w-12 md:h-12 bg-gradient-to-br from-orange-400 to-red-500 rounded-xl flex items-center justify-center shadow-lg flex-shrink-0">
                             <FileText className="h-5 w-5 md:h-6 md:w-6 text-white" />
                           </div>
                           <div className="flex-1 min-w-0">
                             <div className="flex items-start justify-between gap-2 mb-2">
                               <div className="flex-1 min-w-0">
-                                <h3 className="text-base md:text-lg font-bold text-gray-900 truncate mb-1">{report.title}</h3>
+                                <h3 className="text-base md:text-lg font-bold text-gray-900 mb-1 line-clamp-1">{report.title}</h3>
                                 <div className="flex flex-wrap items-center gap-2 text-xs md:text-sm text-gray-600">
                                   <div className="flex items-center gap-1">
                                     <User className="h-3 w-3" />
@@ -751,98 +650,92 @@ Generated on: ${new Date().toLocaleString()}
                                   </div>
                                 </div>
                               </div>
-                              <Badge className={`${getStatusColor(report.status)} text-xs flex-shrink-0`}>
-                                {getStatusIcon(report.status)}
-                                <span className="ml-1 hidden sm:inline">{report.status.replace("_", " ")}</span>
-                              </Badge>
+                              <div className="flex items-center gap-2 flex-shrink-0">
+                                <Badge className={`${getStatusColor(report.status)} text-xs`}>
+                                  {getStatusIcon(report.status)}
+                                  <span className="ml-1 hidden sm:inline">{report.status.replace("_", " ")}</span>
+                                </Badge>
+                                {isExpanded ? (
+                                  <ChevronUp className="h-5 w-5 text-gray-400" />
+                                ) : (
+                                  <ChevronDown className="h-5 w-5 text-gray-400" />
+                                )}
+                              </div>
                             </div>
                             
-                            {/* Minimal description preview */}
                             {!isExpanded && (
-                              <p className="text-xs md:text-sm text-gray-600 line-clamp-2 mb-2">
+                              <p className="text-xs md:text-sm text-gray-600 line-clamp-2">
                                 {report.description}
                               </p>
                             )}
-                            
-                            <div className="flex flex-wrap gap-2 mt-2">
-                              <Button 
-                                size="sm" 
-                                variant="ghost"
-                                onClick={() => toggleReportExpansion(report.id)}
-                                className="h-8 text-xs"
-                              >
-                                {isExpanded ? (
-                                  <>
-                                    <ChevronUp className="h-3 w-3 mr-1" />
-                                    Show Less
-                                  </>
-                                ) : (
-                                  <>
-                                    <ChevronDown className="h-3 w-3 mr-1" />
-                                    Show More
-                                  </>
-                                )}
-                              </Button>
-                              <Button 
-                                size="sm" 
-                                onClick={() => handleViewReport(report)}
-                                className="h-8 text-xs"
-                              >
-                                <Eye className="h-3 w-3 mr-1" />
-                                Review
-                              </Button>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => handleDownloadReport(report)}
-                                className="h-8 text-xs"
-                              >
-                                <Download className="h-3 w-3 mr-1" />
-                                <span className="hidden sm:inline">Download</span>
-                              </Button>
-                            </div>
                           </div>
                         </div>
 
-                        {/* Expanded View */}
+                        {/* Expanded View - FULL DETAILS */}
                         {isExpanded && (
-                          <div className="mt-4 pt-4 border-t space-y-4">
+                          <div className="mt-4 pt-4 border-t space-y-6">
+                            {/* Description */}
                             <div>
-                              <h4 className="text-sm font-semibold text-gray-900 mb-2">Full Description</h4>
-                              <p className="text-sm text-gray-700 leading-relaxed">{report.description}</p>
+                              <h4 className="text-sm font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                                <FileText className="h-4 w-4 text-blue-600" />
+                                Description
+                              </h4>
+                              <div className="bg-blue-50 rounded-lg p-4">
+                                <p className="text-sm text-gray-700 leading-relaxed">{report.description}</p>
+                              </div>
                             </div>
 
+                            {/* Achievements */}
                             {report.achievements && (
                               <div>
-                                <h4 className="text-sm font-semibold text-gray-900 mb-2">Achievements</h4>
-                                <div className="text-sm text-gray-700">
+                                <h4 className="text-sm font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                                  <CheckCircle className="h-4 w-4 text-green-600" />
+                                  Achievements
+                                </h4>
+                                <div className="bg-green-50 rounded-lg p-4">
                                   {Array.isArray(report.achievements) ? (
-                                    <ul className="list-disc list-inside space-y-1">
+                                    <ul className="space-y-2">
                                       {report.achievements.map((achievement, index) => (
-                                        <li key={index}>{achievement}</li>
+                                        <li key={index} className="flex items-start gap-2 text-sm text-gray-700">
+                                          <CheckCircle className="h-4 w-4 text-green-600 mt-0.5 flex-shrink-0" />
+                                          <span>{achievement}</span>
+                                        </li>
                                       ))}
                                     </ul>
                                   ) : (
-                                    <p>{report.achievements}</p>
+                                    <p className="text-sm text-gray-700">{report.achievements}</p>
                                   )}
                                 </div>
                               </div>
                             )}
 
+                            {/* Challenges */}
                             {report.challenges && (
                               <div>
-                                <h4 className="text-sm font-semibold text-gray-900 mb-2">Challenges</h4>
-                                <p className="text-sm text-gray-700 leading-relaxed">{report.challenges}</p>
+                                <h4 className="text-sm font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                                  <AlertCircle className="h-4 w-4 text-orange-600" />
+                                  Challenges
+                                </h4>
+                                <div className="bg-orange-50 rounded-lg p-4">
+                                  <p className="text-sm text-gray-700 leading-relaxed">{report.challenges}</p>
+                                </div>
                               </div>
                             )}
 
+                            {/* Next Week Plan */}
                             {report.next_week_plan && (
                               <div>
-                                <h4 className="text-sm font-semibold text-gray-900 mb-2">Next Week Plan</h4>
-                                <p className="text-sm text-gray-700 leading-relaxed">{report.next_week_plan}</p>
+                                <h4 className="text-sm font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                                  <Calendar className="h-4 w-4 text-blue-600" />
+                                  Next Week Plan
+                                </h4>
+                                <div className="bg-blue-50 rounded-lg p-4">
+                                  <p className="text-sm text-gray-700 leading-relaxed">{report.next_week_plan}</p>
+                                </div>
                               </div>
                             )}
 
+                            {/* Student Info */}
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
                               <div className="flex items-center gap-2 text-gray-600">
                                 <Mail className="h-4 w-4" />
@@ -854,45 +747,47 @@ Generated on: ${new Date().toLocaleString()}
                               </div>
                             </div>
 
+                            {/* Attached File */}
                             {report.file_name && (
-                              <div className="p-3 bg-blue-50 rounded-lg">
-                                <div className="flex items-center justify-between">
-                                  <div className="flex items-center gap-2">
-                                    <FileText className="h-4 w-4 text-blue-600" />
-                                    <span className="text-sm font-medium text-blue-900 truncate">{report.file_name}</span>
-                                  </div>
-                                  <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    onClick={() => {
-                                      setSelectedReport(report)
-                                      setShowFilePreview(true)
-                                    }}
-                                    className="h-8 text-xs"
-                                  >
-                                    <ExternalLink className="h-3 w-3 mr-1" />
-                                    View
-                                  </Button>
-                                </div>
-                                {report.file_size && (
-                                  <p className="text-xs text-gray-500 mt-1">
-                                    Size: {(report.file_size / 1024).toFixed(2)} KB
-                                  </p>
-                                )}
-                              </div>
-                            )}
-
-                            {report.grade && (
                               <div>
-                                <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
-                                  Grade: {report.grade}
-                                </Badge>
+                                <h4 className="text-sm font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                                  <FileText className="h-4 w-4 text-purple-600" />
+                                  Attached Document
+                                </h4>
+                                <div className="p-3 bg-purple-50 rounded-lg">
+                                  <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                                      <FileText className="h-4 w-4 text-purple-600 flex-shrink-0" />
+                                      <span className="text-sm font-medium text-purple-900 truncate">{report.file_name}</span>
+                                    </div>
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        if (report.file_url) {
+                                          window.open(report.file_url, '_blank')
+                                        }
+                                      }}
+                                      className="h-8 text-xs flex-shrink-0"
+                                    >
+                                      <ExternalLink className="h-3 w-3 mr-1" />
+                                      View
+                                    </Button>
+                                  </div>
+                                  {report.file_size && (
+                                    <p className="text-xs text-gray-500 mt-1">
+                                      Size: {(report.file_size / 1024).toFixed(2)} KB
+                                    </p>
+                                  )}
+                                </div>
                               </div>
                             )}
 
+                            {/* Previous Teacher Comments (if exists) */}
                             {report.comments && (
-                              <div className="p-3 bg-amber-50 rounded-lg">
-                                <h4 className="text-sm font-semibold text-amber-900 mb-2">Teacher Comments</h4>
+                              <div className="p-4 bg-amber-50 rounded-lg border border-amber-200">
+                                <h4 className="text-sm font-semibold text-amber-900 mb-2">Previous Teacher Comments</h4>
                                 <p className="text-sm text-amber-800">{report.comments}</p>
                                 {report.reviewed_date && (
                                   <p className="text-xs text-amber-600 mt-2">
@@ -902,16 +797,88 @@ Generated on: ${new Date().toLocaleString()}
                               </div>
                             )}
 
-                            <div className="flex flex-wrap gap-2 pt-2">
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => handleDeleteReport(report.id)}
-                                className="border-red-300 text-red-600 hover:bg-red-50 h-8 text-xs"
-                              >
-                                <Trash2 className="h-3 w-3 mr-1" />
-                                Delete
-                              </Button>
+                            {/* Teacher Review Section */}
+                            <div className="bg-gray-50 rounded-lg p-4 border-2 border-dashed border-gray-300">
+                              <h4 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                                <Mail className="h-4 w-4 text-blue-600" />
+                                Add Your Comments
+                              </h4>
+                              <Textarea
+                                placeholder="Write your feedback and comments here..."
+                                value={teacherComments}
+                                onChange={(e) => setTeacherComments(e.target.value)}
+                                rows={4}
+                                className="mb-4"
+                                onClick={(e) => e.stopPropagation()}
+                              />
+                              
+                              <div className="flex flex-wrap gap-2">
+                                <Button
+                                  size="sm"
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    handleUpdateReportStatus(report.id, "approved")
+                                  }}
+                                  disabled={reviewLoading}
+                                  className="bg-green-600 hover:bg-green-700 text-white"
+                                >
+                                  {reviewLoading ? (
+                                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                  ) : (
+                                    <CheckCircle className="h-4 w-4 mr-2" />
+                                  )}
+                                  Approve
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    handleUpdateReportStatus(report.id, "needs_revision")
+                                  }}
+                                  disabled={reviewLoading}
+                                  className="bg-orange-600 hover:bg-orange-700 text-white"
+                                >
+                                  {reviewLoading ? (
+                                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                  ) : (
+                                    <RotateCcw className="h-4 w-4 mr-2" />
+                                  )}
+                                  Request Revision
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    handleUpdateReportStatus(report.id, "rejected")
+                                  }}
+                                  disabled={reviewLoading}
+                                  variant="destructive"
+                                >
+                                  {reviewLoading ? (
+                                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                  ) : (
+                                    <XCircle className="h-4 w-4 mr-2" />
+                                  )}
+                                  Reject
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    handleDeleteReport(report.id)
+                                  }}
+                                  disabled={deleteLoading}
+                                  variant="outline"
+                                  className="border-red-300 text-red-600 hover:bg-red-50"
+                                >
+                                  {deleteLoading ? (
+                                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                  ) : (
+                                    <Trash2 className="h-4 w-4 mr-2" />
+                                  )}
+                                  Delete
+                                </Button>
+                              </div>
                             </div>
                           </div>
                         )}
@@ -921,275 +888,6 @@ Generated on: ${new Date().toLocaleString()}
                 })
               )}
             </div>
-
-            {/* Report Review Dialog */}
-            <Dialog open={showReportDialog} onOpenChange={setShowReportDialog}>
-              <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-                <DialogHeader>
-                  <DialogTitle className="flex items-center gap-3">
-                    <FileText className="h-6 w-6 text-orange-600" />
-                    Review Report: {selectedReport?.title}
-                  </DialogTitle>
-                  <DialogDescription>
-                    Review and provide feedback for {selectedReport?.student_name}'s weekly report
-                  </DialogDescription>
-                </DialogHeader>
-                {selectedReport && (
-                  <div className="space-y-6">
-                    {/* Report Details */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <Card>
-                        <CardHeader>
-                          <CardTitle className="text-lg">Report Information</CardTitle>
-                        </CardHeader>
-                        <CardContent className="space-y-3">
-                          <div className="flex justify-between">
-                            <span className="text-gray-600">Student:</span>
-                            <span className="font-medium">{selectedReport.student_name}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-gray-600">Email:</span>
-                            <span className="font-medium text-sm">{selectedReport.student_email}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-gray-600">Week:</span>
-                            <span className="font-medium">Week {selectedReport.week_number}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-gray-600">Submitted:</span>
-                            <span className="font-medium text-sm">
-                              {new Date(selectedReport.submitted_date).toLocaleDateString()}
-                            </span>
-                          </div>
-                          {selectedReport.file_name && (
-                            <div className="flex justify-between items-center">
-                              <span className="text-gray-600">File:</span>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={() => setShowFilePreview(true)}
-                                className="h-8 text-xs text-blue-600 hover:text-blue-700"
-                              >
-                                <ExternalLink className="h-3 w-3 mr-1" />
-                                {selectedReport.file_name}
-                              </Button>
-                            </div>
-                          )}
-                        </CardContent>
-                      </Card>
-
-                      <Card>
-                        <CardHeader>
-                          <CardTitle className="text-lg">Current Status</CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                          <div className="space-y-4">
-                            <div className="flex items-center justify-center">
-                              <Badge className={`${getStatusColor(selectedReport.status)} text-lg px-4 py-2`}>
-                                {getStatusIcon(selectedReport.status)}
-                                <span className="ml-2">{selectedReport.status.replace("_", " ")}</span>
-                              </Badge>
-                            </div>
-                            {selectedReport.reviewed_date && (
-                              <div className="text-center text-sm text-gray-600">
-                                Last reviewed: {new Date(selectedReport.reviewed_date).toLocaleDateString()}
-                              </div>
-                            )}
-                          </div>
-                        </CardContent>
-                      </Card>
-                    </div>
-
-                    {/* Report Content */}
-                    <Card>
-                      <CardHeader>
-                        <CardTitle className="text-lg">Report Content</CardTitle>
-                      </CardHeader>
-                      <CardContent className="space-y-4">
-                        <div>
-                          <h4 className="font-semibold text-gray-900 mb-2">Description</h4>
-                          <p className="text-gray-700 leading-relaxed">{selectedReport.description}</p>
-                        </div>
-                        {selectedReport.achievements && (
-                          <div>
-                            <h4 className="font-semibold text-gray-900 mb-2">Achievements</h4>
-                            <div className="text-gray-700 leading-relaxed">
-                              {Array.isArray(selectedReport.achievements) ? (
-                                <ul className="list-disc list-inside space-y-1">
-                                  {selectedReport.achievements.map((achievement, index) => (
-                                    <li key={index}>{achievement}</li>
-                                  ))}
-                                </ul>
-                              ) : (
-                                <p>{selectedReport.achievements}</p>
-                              )}
-                            </div>
-                          </div>
-                        )}
-                        {selectedReport.challenges && (
-                          <div>
-                            <h4 className="font-semibold text-gray-900 mb-2">Challenges</h4>
-                            <p className="text-gray-700 leading-relaxed">{selectedReport.challenges}</p>
-                          </div>
-                        )}
-                        {selectedReport.next_week_plan && (
-                          <div>
-                            <h4 className="font-semibold text-gray-900 mb-2">Next Week Plan</h4>
-                            <p className="text-gray-700 leading-relaxed">{selectedReport.next_week_plan}</p>
-                          </div>
-                        )}
-                      </CardContent>
-                    </Card>
-
-                    {/* Teacher Review Section */}
-                    <Card>
-                      <CardHeader>
-                        <CardTitle className="text-lg">Your Review</CardTitle>
-                      </CardHeader>
-                      <CardContent className="space-y-4">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          <div>
-                            <Label htmlFor="grade">Grade/Score</Label>
-                            <Input
-                              id="grade"
-                              placeholder="e.g., A+, 95, Excellent"
-                              value={grade}
-                              onChange={(e) => setGrade(e.target.value)}
-                            />
-                          </div>
-                          <div>
-                            <Label htmlFor="rating">Rating (1-5 stars)</Label>
-                            <div className="flex items-center gap-2 mt-2">
-                              {[1, 2, 3, 4, 5].map((star) => (
-                                <button key={star} onClick={() => setRating(star)} className="focus:outline-none">
-                                  <Star
-                                    className={`h-6 w-6 cursor-pointer transition-colors ${
-                                      star <= rating
-                                        ? "text-yellow-400 fill-current"
-                                        : "text-gray-300 hover:text-yellow-200"
-                                    }`}
-                                  />
-                                </button>
-                              ))}
-                              <span className="ml-2 text-sm text-gray-600">
-                                {rating > 0 ? `${rating}/5` : "No rating"}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                        <div>
-                          <Label htmlFor="comments">Comments & Feedback</Label>
-                          <Textarea
-                            id="comments"
-                            placeholder="Provide detailed feedback and comments..."
-                            value={teacherComments}
-                            onChange={(e) => setTeacherComments(e.target.value)}
-                            rows={4}
-                          />
-                        </div>
-                      </CardContent>
-                    </Card>
-
-                    {/* Action Buttons */}
-                    <div className="flex flex-col sm:flex-row justify-end space-y-2 sm:space-y-0 sm:space-x-3 pt-4 border-t">
-                      <Button 
-                        variant="outline" 
-                        onClick={() => setShowReportDialog(false)} 
-                        className="w-full sm:w-auto"
-                        disabled={reviewLoading}
-                      >
-                        Cancel
-                      </Button>
-                      <Button
-                        variant="destructive"
-                        onClick={() => handleUpdateReportStatus(selectedReport.id, "needs_revision")}
-                        className="w-full sm:w-auto"
-                        disabled={reviewLoading}
-                      >
-                        {reviewLoading ? (
-                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                        ) : (
-                          <RotateCcw className="h-4 w-4 mr-2" />
-                        )}
-                        Request Revision
-                      </Button>
-                      <Button
-                        variant="outline"
-                        onClick={() => handleUpdateReportStatus(selectedReport.id, "rejected")}
-                        className="w-full sm:w-auto border-red-200 text-red-600 hover:bg-red-50"
-                        disabled={reviewLoading}
-                      >
-                        {reviewLoading ? (
-                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                        ) : (
-                          <XCircle className="h-4 w-4 mr-2" />
-                        )}
-                        Reject
-                      </Button>
-                      <Button
-                        className="w-full sm:w-auto bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700"
-                        onClick={() => handleUpdateReportStatus(selectedReport.id, "approved")}
-                        disabled={reviewLoading}
-                      >
-                        {reviewLoading ? (
-                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                        ) : (
-                          <CheckCircle className="h-4 w-4 mr-2" />
-                        )}
-                        Approve Report
-                      </Button>
-                    </div>
-                  </div>
-                )}
-              </DialogContent>
-            </Dialog>
-
-            {/* File Preview Dialog */}
-            <Dialog open={showFilePreview} onOpenChange={setShowFilePreview}>
-              <DialogContent className="max-w-4xl max-h-[90vh]">
-                <DialogHeader>
-                  <DialogTitle className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <FileText className="h-6 w-6 text-blue-600" />
-                      File Preview: {selectedReport?.file_name}
-                    </div>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => selectedReport && handleDownloadReport(selectedReport)}
-                    >
-                      <Download className="h-4 w-4 mr-2" />
-                      Download
-                    </Button>
-                  </DialogTitle>
-                </DialogHeader>
-                <div className="space-y-4">
-                  {selectedReport?.file_url ? (
-                    <div className="bg-gray-50 rounded-lg p-6 min-h-[400px] flex items-center justify-center">
-                      <div className="text-center">
-                        <FileText className="h-16 w-16 text-gray-400 mx-auto mb-4" />
-                        <p className="text-gray-600 mb-4">
-                          File preview is not available for this file type
-                        </p>
-                        <Button onClick={() => selectedReport && handleDownloadReport(selectedReport)}>
-                          <Download className="h-4 w-4 mr-2" />
-                          Download to View
-                        </Button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="bg-gray-50 rounded-lg p-6">
-                      <p className="text-gray-600 text-center">No file attached to this report</p>
-                    </div>
-                  )}
-                  <div className="flex justify-end">
-                    <Button variant="outline" onClick={() => setShowFilePreview(false)}>
-                      Close
-                    </Button>
-                  </div>
-                </div>
-              </DialogContent>
-            </Dialog>
           </div>
         </div>
       </DashboardLayout>

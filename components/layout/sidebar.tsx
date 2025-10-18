@@ -229,13 +229,13 @@ function SidebarContent({ user, onItemClick }: { user: any; onItemClick?: () => 
               badge: counts.pendingCertificates || undefined,
               badgeVariant: counts.pendingCertificates ? "destructive" : undefined,
             },
-            {
-              name: "Notifications",
-              href: "/dashboard/teacher/notifications",
-              icon: Bell,
-              badge: counts.notifications || undefined,
-              badgeVariant: "default",
-            },
+            // {
+            //   name: "Notifications",
+            //   href: "/dashboard/teacher/notifications",
+            //   icon: Bell,
+            //   badge: counts.notifications || undefined,
+            //   badgeVariant: "default",
+            // },
           ]
         case "tp-officer":
         case "tp_officer":

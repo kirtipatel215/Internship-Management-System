@@ -8,8 +8,6 @@ import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import {
@@ -33,11 +31,13 @@ import {
   AlertCircle,
   Loader2,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  ExternalLink
 } from "lucide-react"
 import { useState, useEffect } from "react"
 import { getCurrentUser, getStudentsByTeacher, getStudentDetails, sendMessageToStudent } from "@/lib/data"
 import { toast } from "sonner"
+import Link from "next/link"
 
 interface Student {
   id: string
@@ -55,7 +55,6 @@ interface Student {
   status: 'active' | 'completed' | 'inactive'
   reportsSubmitted: number
   totalReports: number
-  cgpa: number
   lastActivity: string
   profileImage?: string
   certificates: number
@@ -66,7 +65,7 @@ export default function TeacherStudentsPage() {
   const [students, setStudents] = useState<Student[]>([])
   const [filteredStudents, setFilteredStudents] = useState<Student[]>([])
   const [searchTerm, setSearchTerm] = useState("")
-  const [statusFilter, setStatusFilter] = useState("active") // Default to active
+  const [statusFilter, setStatusFilter] = useState("all")
   const [companyFilter, setCompanyFilter] = useState("all")
   const [progressFilter, setProgressFilter] = useState("all")
   const [loading, setLoading] = useState(true)
@@ -173,13 +172,13 @@ export default function TeacherStudentsPage() {
   const activeFiltersCount = [statusFilter, companyFilter, progressFilter].filter((f) => f !== "all").length
 
   const handleDownloadCSV = () => {
-    const csvContent = `Name,Email,Roll Number,Department,Company,Position,Progress,Status,Reports Submitted,CGPA,Last Activity
+    const csvContent = `Name,Email,Roll Number,Department,Company,Position,Progress,Status,Reports Submitted,Last Activity
 ${filteredStudents
   .map(
     (student) =>
       `${student.name},${student.email},${student.rollNumber},${student.department},${student.company || "N/A"},${
         student.position || "N/A"
-      },${student.progress}%,${student.status},${student.reportsSubmitted}/${student.totalReports},${student.cgpa},${
+      },${student.progress}%,${student.status},${student.reportsSubmitted}/${student.totalReports},${
         student.lastActivity
       }`
   )
@@ -199,7 +198,6 @@ ${filteredStudents
     const newExpandedId = expandedStudentId === studentId ? null : studentId
     setExpandedStudentId(newExpandedId)
     
-    // Load details if expanding and not cached
     if (newExpandedId && !studentDetailsCache[studentId]) {
       setLoadingDetailsId(studentId)
       try {
@@ -270,7 +268,7 @@ ${filteredStudents
             </Alert>
           )}
 
-          {/* Stats Cards - Horizontal Scroll on Mobile */}
+          {/* Stats Cards with Hyperlinks */}
           <div className="overflow-x-auto -mx-3 px-3 sm:mx-0 sm:px-0">
             <div className="flex gap-3 sm:grid sm:grid-cols-2 lg:grid-cols-4 min-w-max sm:min-w-0">
               {[
@@ -280,6 +278,7 @@ ${filteredStudents
                   icon: Users,
                   color: "blue",
                   subtitle: "Under guidance",
+                  filter: "all",
                 },
                 {
                   title: "Active",
@@ -287,6 +286,7 @@ ${filteredStudents
                   icon: TrendingUp,
                   color: "emerald",
                   subtitle: "Ongoing",
+                  filter: "active",
                 },
                 {
                   title: "Completed",
@@ -294,6 +294,7 @@ ${filteredStudents
                   icon: Award,
                   color: "purple",
                   subtitle: "Finished",
+                  filter: "completed",
                 },
                 {
                   title: "Avg Progress",
@@ -303,12 +304,20 @@ ${filteredStudents
                   icon: FileText,
                   color: "orange",
                   subtitle: "Overall",
+                  filter: null,
                 },
               ].map((stat, index) => (
-                <Card key={index} className="hover:shadow-md transition-shadow min-w-[160px] sm:min-w-0">
+                <Card 
+                  key={index} 
+                  className={`hover:shadow-md transition-all min-w-[160px] sm:min-w-0 ${stat.filter ? 'cursor-pointer hover:scale-105' : ''}`}
+                  onClick={() => stat.filter && setStatusFilter(stat.filter)}
+                >
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 p-4">
                     <CardTitle className="text-xs sm:text-sm font-medium">{stat.title}</CardTitle>
-                    <stat.icon className={`h-4 w-4 text-${stat.color}-500`} />
+                    <div className="flex items-center gap-1">
+                      <stat.icon className={`h-4 w-4 text-${stat.color}-500`} />
+                      {stat.filter && <ExternalLink className="h-3 w-3 text-gray-400" />}
+                    </div>
                   </CardHeader>
                   <CardContent className="p-4 pt-0">
                     <div className="text-xl sm:text-2xl font-bold">{stat.value}</div>
@@ -319,7 +328,7 @@ ${filteredStudents
             </div>
           </div>
 
-          {/* Filters - Single Horizontal Div on Mobile */}
+          {/* Filters */}
           <Card>
             <CardHeader className="p-4">
               <div className="flex items-center justify-between">
@@ -487,7 +496,7 @@ ${filteredStudents
                           </div>
                           <p className="text-xs sm:text-sm text-gray-600">{student.rollNumber} • {student.department}</p>
                           
-                          {/* Active Internship Info - Always visible */}
+                          {/* Active Internship Info */}
                           {student.company && (
                             <div className="mt-2 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-2 sm:p-3">
                               <div className="flex items-center gap-2 mb-1">
@@ -510,7 +519,7 @@ ${filteredStudents
                             </div>
                           )}
                           
-                          {/* Progress bar - Always visible */}
+                          {/* Progress bar */}
                           <div className="mt-3">
                             <div className="flex items-center justify-between mb-1">
                               <span className="text-xs font-medium text-gray-700">Progress</span>
@@ -552,10 +561,6 @@ ${filteredStudents
                                   </div>
                                   <div className="space-y-2">
                                     <div className="flex justify-between">
-                                      <span className="font-medium text-gray-700">CGPA:</span>
-                                      <span className="font-semibold text-gray-900">{student.cgpa}</span>
-                                    </div>
-                                    <div className="flex justify-between">
                                       <span className="font-medium text-gray-700">Department:</span>
                                       <span className="text-gray-900">{student.department}</span>
                                     </div>
@@ -579,10 +584,6 @@ ${filteredStudents
                                       <div className="flex justify-between">
                                         <span className="font-medium text-gray-700">Position:</span>
                                         <span className="text-gray-900">{student.position}</span>
-                                      </div>
-                                      <div className="flex justify-between">
-                                        <span className="font-medium text-gray-700">Supervisor:</span>
-                                        <span className="text-gray-900">{student.supervisor}</span>
                                       </div>
                                       <div className="flex justify-between">
                                         <span className="font-medium text-gray-700">Status:</span>
@@ -611,18 +612,14 @@ ${filteredStudents
                                   <TrendingUp className="w-4 h-4" />
                                   Progress Overview
                                 </h4>
-                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
+                                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-3">
                                   <div className="bg-blue-50 rounded-lg p-3 text-center">
                                     <div className="text-xl sm:text-2xl font-bold text-blue-600">{student.progress}%</div>
                                     <p className="text-xs text-blue-700 mt-1">Overall Progress</p>
                                   </div>
                                   <div className="bg-green-50 rounded-lg p-3 text-center">
                                     <div className="text-xl sm:text-2xl font-bold text-green-600">{student.reportsSubmitted}</div>
-                                    <p className="text-xs text-green-700 mt-1">Submitted</p>
-                                  </div>
-                                  <div className="bg-purple-50 rounded-lg p-3 text-center">
-                                    <div className="text-xl sm:text-2xl font-bold text-purple-600">{student.totalReports}</div>
-                                    <p className="text-xs text-purple-700 mt-1">Required</p>
+                                    <p className="text-xs text-green-700 mt-1">Submitted Reports</p>
                                   </div>
                                   <div className="bg-orange-50 rounded-lg p-3 text-center">
                                     <div className="text-xl sm:text-2xl font-bold text-orange-600">{student.certificates}</div>
