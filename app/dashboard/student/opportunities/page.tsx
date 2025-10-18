@@ -16,10 +16,15 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible"
 import { 
-  Search, MapPin, Calendar, Building, ExternalLink, Send, Briefcase, 
-  FileText, Eye, Download, MessageSquare, Clock, User, DollarSign,
-  CheckCircle2, XCircle, AlertCircle, RefreshCw
+  Search, MapPin, Calendar, Building, Send, Briefcase, 
+  FileText, Clock, DollarSign, CheckCircle2, XCircle, 
+  RefreshCw, ChevronDown, ChevronUp, MessageSquare, Download
 } from "lucide-react"
 import { useState, useEffect } from "react"
 import { getCurrentUser, downloadFile } from "@/lib/data"
@@ -61,26 +66,33 @@ export default function StudentOpportunities() {
   const [searchTerm, setSearchTerm] = useState("")
   const [filterLocation, setFilterLocation] = useState("all")
   const [filterDuration, setFilterDuration] = useState("all")
+  const [filterStatus, setFilterStatus] = useState("all")
   const [opportunities, setOpportunities] = useState<Opportunity[]>([])
   const [applications, setApplications] = useState<Application[]>([])
   const [availableLocations, setAvailableLocations] = useState<string[]>([])
   const [selectedOpportunity, setSelectedOpportunity] = useState<Opportunity | null>(null)
-  const [viewOpportunity, setViewOpportunity] = useState<Opportunity | null>(null)
   const [coverLetter, setCoverLetter] = useState("")
   const [isApplying, setIsApplying] = useState(false)
   const [dialogOpen, setDialogOpen] = useState(false)
-  const [detailsDialogOpen, setDetailsDialogOpen] = useState(false)
   const [documentsDialogOpen, setDocumentsDialogOpen] = useState(false)
   const [selectedApplication, setSelectedApplication] = useState<Application | null>(null)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [currentUser, setCurrentUser] = useState<any>(null)
+  const [expandedCards, setExpandedCards] = useState<Set<number>>(new Set())
   const { toast } = useToast()
   const router = useRouter()
 
   useEffect(() => {
     initializeData()
   }, [])
+
+  // Show pending opportunities on load
+  useEffect(() => {
+    if (!loading && applications.length > 0) {
+      setFilterStatus("pending")
+    }
+  }, [loading, applications])
 
   const initializeData = async () => {
     setLoading(true)
@@ -119,7 +131,6 @@ export default function StudentOpportunities() {
     }
 
     try {
-      // Fetch opportunities directly from job_opportunities table
       const { data: oppsData, error: oppsError } = await supabase
         .from("job_opportunities")
         .select("*")
@@ -134,16 +145,13 @@ export default function StudentOpportunities() {
       console.log("✅ Loaded opportunities:", oppsData?.length || 0)
       setOpportunities(oppsData || [])
 
-      // Extract unique locations
       if (oppsData && oppsData.length > 0) {
         const locations = [...new Set(
           oppsData.map((opp: Opportunity) => opp.location.split(',')[0].trim())
         )].filter(Boolean).sort()
         setAvailableLocations(locations)
-        console.log("📍 Available locations:", locations)
       }
 
-      // Fetch user's applications directly from applications table
       const { data: appsData, error: appsError } = await supabase
         .from("applications")
         .select("*")
@@ -208,9 +216,8 @@ export default function StudentOpportunities() {
       if (!currentUser) throw new Error("User not found")
       if (!supabase) throw new Error("Database not available")
 
-      console.log("📝 Submitting application...")
+      console.log("🚀 Submitting application...")
 
-      // 1. Insert application directly into database
       const { data: newApplication, error: insertError } = await supabase
         .from("applications")
         .insert({
@@ -221,38 +228,30 @@ export default function StudentOpportunities() {
           cover_letter: coverLetter.trim(),
           status: "pending",
           applied_date: new Date().toISOString(),
-          // Note: resume_file_name and resume_file_url should be handled if the UI included file upload,
-          // but based on the provided code, they are omitted here.
         })
         .select()
         .single()
 
       if (insertError) {
         console.error("❌ Insert error:", insertError)
-        // Check for duplicate application error (assuming a unique constraint exists on student_id + opportunity_id)
         if (insertError.code === '23505') {
-             throw new Error("You have already applied for this opportunity.")
+          throw new Error("You have already applied for this opportunity.")
         }
         throw new Error(insertError.message)
       }
 
       console.log("✅ Application submitted:", newApplication)
 
-      // 2. ATOMICALLY Update applicant count in job_opportunities table
-      // This uses the 'increment' operator, which is safe against race conditions.
+      // Update applicant count
       const { error: updateError } = await supabase
         .from("job_opportunities")
         .update({ 
           applicants: selectedOpportunity.applicants + 1
         })
         .eq("id", selectedOpportunity.id)
-        .select() // Select to get the fresh data
 
       if (updateError) {
-        console.warn("⚠️ Could not atomically update applicant count:", updateError)
-        // Note: We still proceed since the application insert was successful.
-      } else {
-        console.log("✅ Applicant count updated.")
+        console.warn("⚠️ Could not update applicant count:", updateError)
       }
 
       toast({
@@ -260,12 +259,10 @@ export default function StudentOpportunities() {
         description: `Your application for ${selectedOpportunity.title} has been submitted successfully.`,
       })
 
-      // Reset and close
       setCoverLetter("")
       setSelectedOpportunity(null)
       setDialogOpen(false)
 
-      // Reload data to show updated counts and application list
       await loadAllData(currentUser.id)
 
     } catch (error: any) {
@@ -310,13 +307,13 @@ export default function StudentOpportunities() {
         className: "bg-green-100 text-green-800 border-green-300",
         text: "Accepted"
       },
-      selected: { // Added 'selected' based on schema but mapping to 'accepted' text for UI
+      selected: { 
         icon: CheckCircle2, 
         className: "bg-green-100 text-green-800 border-green-300",
         text: "Accepted"
       },
       interviewed: { 
-        icon: Eye, 
+        icon: CheckCircle2, 
         className: "bg-purple-100 text-purple-800 border-purple-300",
         text: "Interviewed"
       },
@@ -326,7 +323,7 @@ export default function StudentOpportunities() {
     const Icon = config.icon
     
     return (
-      <Badge className={`${config.className} flex items-center gap-1 border`}>
+      <Badge className={`${config.className} flex items-center gap-1 border text-xs`}>
         <Icon className="h-3 w-3" />
         {config.text}
       </Badge>
@@ -358,6 +355,16 @@ export default function StudentOpportunities() {
     }
   }
 
+  const toggleCard = (id: number) => {
+    const newExpanded = new Set(expandedCards)
+    if (newExpanded.has(id)) {
+      newExpanded.delete(id)
+    } else {
+      newExpanded.add(id)
+    }
+    setExpandedCards(newExpanded)
+  }
+
   const filteredOpportunities = opportunities.filter((opportunity) => {
     const searchMatch =
       opportunity.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -367,12 +374,22 @@ export default function StudentOpportunities() {
       filterLocation === "all" || 
       opportunity.location.toLowerCase().includes(filterLocation.toLowerCase())
 
-    // Simple matching for duration filter
     const durationMatch = 
       filterDuration === "all" || 
       opportunity.duration.toLowerCase().includes(`${filterDuration.toLowerCase()} month`)
 
-    return searchMatch && locationMatch && durationMatch
+    // Status filter based on application status
+    let statusMatch = true
+    if (filterStatus !== "all") {
+      const application = getApplication(opportunity.id)
+      if (filterStatus === "not-applied") {
+        statusMatch = !application
+      } else {
+        statusMatch = application?.status === filterStatus
+      }
+    }
+
+    return searchMatch && locationMatch && durationMatch && statusMatch
   })
 
   if (loading) {
@@ -390,14 +407,16 @@ export default function StudentOpportunities() {
     )
   }
 
+  const pendingCount = applications.filter(app => app.status === 'pending').length
+
   return (
     <AuthGuard allowedRoles={["student"]}>
       <DashboardLayout>
-        <div className="space-y-6">
+        <div className="space-y-4">
           <div className="flex justify-between items-start">
             <div>
               <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Internship Opportunities</h1>
-              <p className="text-gray-600">Discover and apply for verified internship positions</p>
+              <p className="text-gray-600 text-sm">Discover and apply for verified internship positions</p>
             </div>
             <Button
               variant="outline"
@@ -406,16 +425,15 @@ export default function StudentOpportunities() {
               disabled={refreshing}
               className="ml-4"
             >
-              <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
-              Refresh
+              <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
             </Button>
           </div>
 
           {/* Search and Filters */}
           <Card>
-            <CardContent className="p-4">
-              <div className="flex flex-col md:flex-row gap-4">
-                <div className="flex-1 relative">
+            <CardContent className="p-3 sm:p-4">
+              <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
+                <div className="relative flex-1">
                   <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
                   <Input
                     placeholder="Search by title or company..."
@@ -424,212 +442,229 @@ export default function StudentOpportunities() {
                     className="pl-10"
                   />
                 </div>
-                <Select value={filterLocation} onValueChange={setFilterLocation}>
-                  <SelectTrigger className="w-full md:w-48">
-                    <SelectValue placeholder="All Locations" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Locations</SelectItem>
-                    {availableLocations.map((location) => (
-                      <SelectItem key={location} value={location.toLowerCase()}>
-                        {location}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Select value={filterDuration} onValueChange={setFilterDuration}>
-                  <SelectTrigger className="w-full md:w-48">
-                    <SelectValue placeholder="Duration" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Durations</SelectItem>
-                    <SelectItem value="1">1 month</SelectItem>
-                    <SelectItem value="2">2 months</SelectItem>
-                    <SelectItem value="3">3 months</SelectItem>
-                    <SelectItem value="4">4 months</SelectItem>
-                    <SelectItem value="6">6 months</SelectItem>
-                  </SelectContent>
-                </Select>
+                <div className="flex gap-2 overflow-x-auto sm:overflow-x-visible pb-1 sm:pb-0">
+                  <Select value={filterStatus} onValueChange={setFilterStatus}>
+                    <SelectTrigger className="w-[140px] sm:w-[160px] flex-shrink-0">
+                      <SelectValue placeholder="Status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Status</SelectItem>
+                      <SelectItem value="not-applied">Not Applied</SelectItem>
+                      <SelectItem value="pending">Pending</SelectItem>
+                      <SelectItem value="shortlisted">Shortlisted</SelectItem>
+                      <SelectItem value="interviewed">Interviewed</SelectItem>
+                      <SelectItem value="accepted">Accepted</SelectItem>
+                      <SelectItem value="rejected">Rejected</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Select value={filterLocation} onValueChange={setFilterLocation}>
+                    <SelectTrigger className="w-[140px] sm:w-[160px] flex-shrink-0">
+                      <SelectValue placeholder="Location" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Locations</SelectItem>
+                      {availableLocations.map((location) => (
+                        <SelectItem key={location} value={location.toLowerCase()}>
+                          {location}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Select value={filterDuration} onValueChange={setFilterDuration}>
+                    <SelectTrigger className="w-[140px] sm:w-[160px] flex-shrink-0">
+                      <SelectValue placeholder="Duration" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Durations</SelectItem>
+                      <SelectItem value="1">1 month</SelectItem>
+                      <SelectItem value="2">2 months</SelectItem>
+                      <SelectItem value="3">3 months</SelectItem>
+                      <SelectItem value="4">4 months</SelectItem>
+                      <SelectItem value="6">6 months</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
             </CardContent>
           </Card>
 
           {/* Statistics */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <Card>
+          <div className="flex sm:grid sm:grid-cols-3 gap-3 sm:gap-4 overflow-x-auto sm:overflow-x-visible pb-2 sm:pb-0">
+            <Card className="flex-shrink-0 min-w-[200px] sm:min-w-0 cursor-pointer hover:shadow-md transition-shadow" onClick={() => setFilterStatus("all")}>
               <CardContent className="p-4">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-gray-600">Total Opportunities</p>
+                    <p className="text-xs sm:text-sm text-gray-600">Total Opportunities</p>
                     <p className="text-2xl font-bold">{opportunities.length}</p>
                   </div>
-                  <Briefcase className="h-8 w-8 text-blue-600" />
+                  <Briefcase className="h-7 w-7 sm:h-8 sm:w-8 text-blue-600" />
                 </div>
               </CardContent>
             </Card>
-            <Card>
+            <Card className="flex-shrink-0 min-w-[200px] sm:min-w-0 cursor-pointer hover:shadow-md transition-shadow" onClick={() => setFilterStatus("all")}>
               <CardContent className="p-4">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-gray-600">My Applications</p>
+                    <p className="text-xs sm:text-sm text-gray-600">My Applications</p>
                     <p className="text-2xl font-bold">{applications.length}</p>
                   </div>
-                  <FileText className="h-8 w-8 text-green-600" />
+                  <FileText className="h-7 w-7 sm:h-8 sm:w-8 text-green-600" />
                 </div>
               </CardContent>
             </Card>
-            <Card>
+            <Card className="flex-shrink-0 min-w-[200px] sm:min-w-0 cursor-pointer hover:shadow-md transition-shadow" onClick={() => setFilterStatus("pending")}>
               <CardContent className="p-4">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-gray-600">Pending Review</p>
-                    <p className="text-2xl font-bold">
-                      {applications.filter(app => app.status === 'pending').length}
-                    </p>
+                    <p className="text-xs sm:text-sm text-gray-600">Pending Review</p>
+                    <p className="text-2xl font-bold">{pendingCount}</p>
                   </div>
-                  <Clock className="h-8 w-8 text-yellow-600" />
+                  <Clock className="h-7 w-7 sm:h-8 sm:w-8 text-yellow-600" />
                 </div>
               </CardContent>
             </Card>
           </div>
 
           {/* Opportunities List */}
-          <div className="space-y-4">
+          <div className="space-y-3 sm:space-y-4">
             {filteredOpportunities.map((opportunity) => {
               const applied = hasApplied(opportunity.id)
               const application = getApplication(opportunity.id)
               const status = application?.status
               const feedback = application?.feedback
+              const isExpanded = expandedCards.has(opportunity.id)
 
               return (
-                <Card key={opportunity.id} className="hover:shadow-lg transition-shadow">
-                  <CardContent className="p-4 sm:p-6">
-                    <div className="flex flex-col lg:flex-row lg:justify-between lg:items-start gap-4">
-                      <div className="flex-1">
-                        <div className="flex flex-wrap items-center gap-3 mb-3">
-                          <h3 className="text-lg sm:text-xl font-semibold">{opportunity.title}</h3>
-                          {opportunity.verified && (
-                            <Badge className="bg-green-600 text-white">
-                              ✓ Verified
-                            </Badge>
-                          )}
-                          <Badge variant="outline">{opportunity.job_type}</Badge>
-                          {applied && status && getStatusBadge(status)}
-                        </div>
-                        
-                        <div className="flex flex-wrap items-center gap-4 text-gray-600 mb-3 text-sm">
-                          <div className="flex items-center gap-1">
-                            <Building className="h-4 w-4" />
-                            <span>{opportunity.company_name}</span>
+                <Card key={opportunity.id} className="hover:shadow-md transition-shadow overflow-hidden">
+                  <Collapsible open={isExpanded} onOpenChange={() => toggleCard(opportunity.id)}>
+                    <CardContent className="p-4 sm:p-6">
+                      {/* Minimal View */}
+                      <div className="flex items-start justify-between gap-3">
+                        <div 
+                          className="flex-1 min-w-0 cursor-pointer" 
+                          onClick={() => toggleCard(opportunity.id)}
+                        >
+                          <div className="flex flex-wrap items-center gap-2 mb-2">
+                            <h3 className="text-base sm:text-lg font-semibold truncate">{opportunity.title}</h3>
+                            {opportunity.verified && (
+                              <Badge className="bg-green-600 text-white text-xs flex-shrink-0">
+                                ✓
+                              </Badge>
+                            )}
+                            {applied && status && getStatusBadge(status)}
                           </div>
-                          <div className="flex items-center gap-1">
-                            <MapPin className="h-4 w-4" />
-                            <span>{opportunity.location}</span>
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <Calendar className="h-4 w-4" />
-                            <span>{opportunity.duration}</span>
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <DollarSign className="h-4 w-4" />
-                            <span>{opportunity.stipend}</span>
-                          </div>
-                        </div>
-
-                        <p className="text-gray-700 mb-3 text-sm sm:text-base line-clamp-2">
-                          {opportunity.description}
-                        </p>
-
-                        <div className="flex flex-wrap gap-2 mb-3">
-                          {opportunity.requirements?.slice(0, 4).map((req: string, index: number) => (
-                            <Badge key={index} variant="secondary" className="text-xs">
-                              {req}
-                            </Badge>
-                          ))}
-                          {opportunity.requirements?.length > 4 && (
-                            <Badge variant="secondary" className="text-xs">
-                              +{opportunity.requirements.length - 4} more
-                            </Badge>
-                          )}
-                        </div>
-
-                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4 text-xs sm:text-sm text-gray-600">
-                          <div>
-                            <span className="font-medium">Positions:</span> {opportunity.positions}
-                          </div>
-                          <div>
-                            <span className="font-medium">Applicants:</span> {opportunity.applicants || 0}
-                          </div>
-                          <div>
-                            <span className="font-medium">Deadline:</span>{" "}
-                            {new Date(opportunity.deadline).toLocaleDateString()}
-                          </div>
-                          <div>
-                            <span className="font-medium">Posted:</span>{" "}
-                            {new Date(opportunity.posted_date).toLocaleDateString()}
-                          </div>
-                        </div>
-                        
-                        {/* TP Officer Feedback */}
-                        {applied && feedback && (
-                          <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                            <div className="flex items-start gap-2">
-                              <MessageSquare className="h-4 w-4 text-blue-600 mt-0.5 flex-shrink-0" />
-                              <div className="flex-1">
-                                <p className="text-xs font-medium text-blue-900 mb-1">TP Officer Feedback:</p>
-                                <p className="text-sm text-blue-800">{feedback}</p>
-                              </div>
+                          
+                          <div className="flex flex-wrap items-center gap-3 text-xs sm:text-sm text-gray-600 mb-2">
+                            <div className="flex items-center gap-1">
+                              <Building className="h-3 w-3 sm:h-4 sm:w-4 flex-shrink-0" />
+                              <span className="truncate">{opportunity.company_name}</span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <MapPin className="h-3 w-3 sm:h-4 sm:w-4 flex-shrink-0" />
+                              <span className="truncate">{opportunity.location.split(',')[0]}</span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <DollarSign className="h-3 w-3 sm:h-4 sm:w-4 flex-shrink-0" />
+                              <span>{opportunity.stipend}</span>
                             </div>
                           </div>
-                        )}
 
-                        {/* View Documents Button */}
-                        {applied && application && (
-                          <div className="mt-3">
-                            <Button 
-                              variant="outline" 
-                              size="sm"
-                              onClick={() => handleViewDocuments(application)}
-                              className="text-xs"
-                            >
-                              <FileText className="h-3 w-3 mr-1" />
-                              View My Application
-                            </Button>
+                          <div className="flex items-center gap-2 text-xs text-gray-500">
+                            <span>{opportunity.positions} positions</span>
+                            <span>•</span>
+                            <span>{opportunity.applicants || 0} applicants</span>
+                            <span>•</span>
+                            <span className="hidden sm:inline">Deadline: {new Date(opportunity.deadline).toLocaleDateString()}</span>
+                            <span className="sm:hidden">Deadline: {new Date(opportunity.deadline).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
                           </div>
-                        )}
+                        </div>
+
+                        <div className="flex flex-col gap-2 flex-shrink-0">
+                          {!applied ? (
+                            <Button
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setSelectedOpportunity(opportunity)
+                                setDialogOpen(true)
+                              }}
+                              className="text-xs h-8 sm:h-9 sm:text-sm"
+                            >
+                              Apply
+                            </Button>
+                          ) : (
+                            <Button 
+                              size="sm"
+                              variant="outline"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                application && handleViewDocuments(application)
+                              }}
+                              className="text-xs h-8 sm:h-9 sm:text-sm"
+                            >
+                              View
+                            </Button>
+                          )}
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            className="h-8 w-8 p-0"
+                            onClick={() => toggleCard(opportunity.id)}
+                          >
+                            {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                          </Button>
+                        </div>
                       </div>
 
-                      <div className="flex flex-col gap-2 lg:ml-4 min-w-[140px]">
-                        {!applied ? (
-                          <Button
-                            onClick={() => {
-                              setSelectedOpportunity(opportunity)
-                              setDialogOpen(true)
-                            }}
-                            className="w-full"
-                          >
-                            Apply Now
-                            <Send className="ml-2 h-4 w-4" />
-                          </Button>
-                        ) : (
-                          <Button disabled className="w-full bg-gray-400">
-                            ✓ Applied
-                          </Button>
-                        )}
-                        <Button 
-                          variant="outline" 
-                          className="w-full"
-                          onClick={() => {
-                            setViewOpportunity(opportunity)
-                            setDetailsDialogOpen(true)
-                          }}
-                        >
-                          View Details
-                          <Eye className="ml-2 h-4 w-4" />
-                        </Button>
-                      </div>
-                    </div>
-                  </CardContent>
+                      {/* Expanded Details */}
+                      <CollapsibleContent className="pt-4 border-t mt-4">
+                        <div className="space-y-3">
+                          <div>
+                            <h4 className="text-sm font-medium mb-1">Description</h4>
+                            <p className="text-sm text-gray-700">{opportunity.description}</p>
+                          </div>
+
+                          <div>
+                            <h4 className="text-sm font-medium mb-2">Requirements</h4>
+                            <div className="flex flex-wrap gap-2">
+                              {opportunity.requirements?.map((req: string, index: number) => (
+                                <Badge key={index} variant="secondary" className="text-xs">
+                                  {req}
+                                </Badge>
+                              ))}
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-2 text-xs sm:text-sm">
+                            <div>
+                              <span className="font-medium">Duration:</span> {opportunity.duration}
+                            </div>
+                            <div>
+                              <span className="font-medium">Type:</span> {opportunity.job_type}
+                            </div>
+                            <div>
+                              <span className="font-medium">Posted:</span> {new Date(opportunity.posted_date).toLocaleDateString()}
+                            </div>
+                            <div>
+                              <span className="font-medium">Deadline:</span> {new Date(opportunity.deadline).toLocaleDateString()}
+                            </div>
+                          </div>
+
+                          {applied && feedback && (
+                            <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                              <div className="flex items-start gap-2">
+                                <MessageSquare className="h-4 w-4 text-blue-600 mt-0.5 flex-shrink-0" />
+                                <div className="flex-1">
+                                  <p className="text-xs font-medium text-blue-900 mb-1">TP Officer Feedback:</p>
+                                  <p className="text-sm text-blue-800">{feedback}</p>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </CollapsibleContent>
+                    </CardContent>
+                  </Collapsible>
                 </Card>
               )
             })}
@@ -641,7 +676,7 @@ export default function StudentOpportunities() {
                 <Briefcase className="h-12 w-12 mx-auto text-gray-400 mb-4" />
                 <p className="text-gray-500 mb-2 font-medium">No opportunities found</p>
                 <p className="text-sm text-gray-400">
-                  Try adjusting your search criteria or check back later for new opportunities.
+                  Try adjusting your filters or check back later for new opportunities.
                 </p>
               </CardContent>
             </Card>
@@ -694,112 +729,6 @@ export default function StudentOpportunities() {
                 </Button>
               </div>
             </div>
-          </DialogContent>
-        </Dialog>
-
-        {/* Details Dialog */}
-        <Dialog open={detailsDialogOpen} onOpenChange={setDetailsDialogOpen}>
-          <DialogContent className="sm:max-w-[600px] max-h-[80vh] overflow-y-auto mx-4">
-            <DialogHeader>
-              <DialogTitle className="text-xl">{viewOpportunity?.title}</DialogTitle>
-              <div className="flex flex-wrap gap-2 pt-2">
-                {viewOpportunity?.verified && (
-                  <Badge className="bg-green-600 text-white">
-                    ✓ Verified
-                  </Badge>
-                )}
-                <Badge variant="outline">{viewOpportunity?.job_type}</Badge>
-              </div>
-            </DialogHeader>
-            
-            {viewOpportunity && (
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <h3 className="font-semibold text-gray-900">Company Information</h3>
-                  <div className="grid grid-cols-2 gap-3 text-sm">
-                    <div className="flex items-center gap-2">
-                      <Building className="h-4 w-4 text-gray-500" />
-                      <span>{viewOpportunity.company_name}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <MapPin className="h-4 w-4 text-gray-500" />
-                      <span>{viewOpportunity.location}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Calendar className="h-4 w-4 text-gray-500" />
-                      <span>{viewOpportunity.duration}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <DollarSign className="h-4 w-4 text-gray-500" />
-                      <span>{viewOpportunity.stipend}</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <h3 className="font-semibold text-gray-900">About the Role</h3>
-                  <p className="text-sm text-gray-700 whitespace-pre-wrap">{viewOpportunity.description}</p>
-                </div>
-
-                <div className="space-y-2">
-                  <h3 className="font-semibold text-gray-900">Requirements</h3>
-                  <div className="flex flex-wrap gap-2">
-                    {viewOpportunity.requirements?.map((req: string, index: number) => (
-                      <Badge key={index} variant="secondary">{req}</Badge>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <h3 className="font-semibold text-gray-900">Additional Information</h3>
-                  <div className="grid grid-cols-2 gap-3 text-sm">
-                    <div>
-                      <span className="font-medium text-gray-700">Positions Available:</span>
-                      <p className="text-gray-900">{viewOpportunity.positions}</p>
-                    </div>
-                    <div>
-                      <span className="font-medium text-gray-700">Total Applications:</span>
-                      <p className="text-gray-900">{viewOpportunity.applicants || 0}</p>
-                    </div>
-                    <div>
-                      <span className="font-medium text-gray-700">Application Deadline:</span>
-                      <p className="text-gray-900">{new Date(viewOpportunity.deadline).toLocaleDateString()}</p>
-                    </div>
-                    <div>
-                      <span className="font-medium text-gray-700">Posted On:</span>
-                      <p className="text-gray-900">{new Date(viewOpportunity.posted_date).toLocaleDateString()}</p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex gap-2 pt-4">
-                  {!hasApplied(viewOpportunity.id) ? (
-                    <Button
-                      onClick={() => {
-                        setDetailsDialogOpen(false)
-                        setSelectedOpportunity(viewOpportunity)
-                        setDialogOpen(true)
-                      }}
-                      className="flex-1"
-                    >
-                      Apply Now
-                      <Send className="ml-2 h-4 w-4" />
-                    </Button>
-                  ) : (
-                    <Button disabled className="flex-1 bg-gray-400">
-                      ✓ Already Applied
-                    </Button>
-                  )}
-                  <Button
-                    variant="outline"
-                    onClick={() => setDetailsDialogOpen(false)}
-                    className="flex-1"
-                  >
-                    Close
-                  </Button>
-                </div>
-              </div>
-            )}
           </DialogContent>
         </Dialog>
 
