@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Sheet, SheetContent } from "@/components/ui/sheet"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import {
   Home,
   FileText,
@@ -77,6 +78,11 @@ function SidebarContent({ user, onItemClick }: { user: any; onItemClick?: () => 
   const [counts, setCounts] = useState<DynamicCounts>({})
   const [loading, setLoading] = useState(true)
 
+  // Memoize avatar URL
+  const avatarUrl = useMemo(() => {
+    return user?.avatarUrl || user?.avatar_url || null
+  }, [user?.avatarUrl, user?.avatar_url])
+
   // Fetch dynamic counts based on user role
   useEffect(() => {
     const fetchCounts = async () => {
@@ -97,7 +103,6 @@ function SidebarContent({ user, onItemClick }: { user: any; onItemClick?: () => 
               getNOCRequestsByStudent(user.id).catch(() => []),
               getReportsByStudent(user.id).catch(() => []),
               getCertificatesByStudent(user.id).catch(() => []),
-              // You can add a getNotificationsByStudent function if you have one
               Promise.resolve([]),
             ])
 
@@ -106,7 +111,7 @@ function SidebarContent({ user, onItemClick }: { user: any; onItemClick?: () => 
               nocRequests: nocRequests.filter((n: any) => n.status === "pending").length,
               reports: reports.filter((r: any) => r.status === "pending").length,
               certificates: certificates.filter((c: any) => c.status === "pending").length,
-              notifications: 0, // Will be populated when notification system is ready
+              notifications: 0,
             }
             break
 
@@ -229,13 +234,6 @@ function SidebarContent({ user, onItemClick }: { user: any; onItemClick?: () => 
               badge: counts.pendingCertificates || undefined,
               badgeVariant: counts.pendingCertificates ? "destructive" : undefined,
             },
-            // {
-            //   name: "Notifications",
-            //   href: "/dashboard/teacher/notifications",
-            //   icon: Bell,
-            //   badge: counts.notifications || undefined,
-            //   badgeVariant: "default",
-            // },
           ]
         case "tp-officer":
         case "tp_officer":
@@ -367,9 +365,17 @@ function SidebarContent({ user, onItemClick }: { user: any; onItemClick?: () => 
       {/* User info and logout */}
       <div className="border-t border-gray-200 p-4 space-y-3">
         <div className="flex items-center space-x-3 px-2">
-          <div className="h-8 w-8 rounded-full bg-gradient-to-r from-blue-500 to-purple-600 flex items-center justify-center">
-            <span className="text-sm font-medium text-white">{userInitials}</span>
-          </div>
+          <Avatar className="h-8 w-8">
+            {avatarUrl && (
+              <AvatarImage 
+                src={avatarUrl} 
+                alt={user?.name || "User"} 
+              />
+            )}
+            <AvatarFallback className="bg-gradient-to-r from-blue-500 to-purple-600 text-white text-sm font-medium">
+              {userInitials}
+            </AvatarFallback>
+          </Avatar>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium text-gray-900 truncate">{user?.name || "User"}</p>
             <p className="text-xs text-gray-500 truncate capitalize">{userRoleFormatted}</p>

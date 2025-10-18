@@ -1,8 +1,8 @@
-// components/layout/header.tsx - Fixed Header Component
+// components/layout/header.tsx - Updated with Avatar URL Support
 "use client"
 
 import { Button } from "@/components/ui/button"
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -11,7 +11,7 @@ import {
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu"
 import { Badge } from "@/components/ui/badge"
-import { Menu, Bell, Settings, LogOut, User, Moon, Sun, Shield } from "lucide-react"
+import { Menu, Settings, LogOut, User, Moon, Sun, Shield } from "lucide-react"
 import { logout } from "@/lib/auth"
 import { useState, useCallback, useMemo } from "react"
 import { useToast } from "@/hooks/use-toast"
@@ -54,6 +54,11 @@ export function Header({ onMenuClick, user, pageTitle = "Dashboard" }: HeaderPro
     return user?.employeeId || user?.rollNumber || null
   }, [user?.employeeId, user?.rollNumber])
 
+  // Memoize avatar URL
+  const avatarUrl = useMemo(() => {
+    return user?.avatarUrl || user?.avatar_url || null
+  }, [user?.avatarUrl, user?.avatar_url])
+
   // Memoize callback functions
   const handleLogout = useCallback(() => {
     try {
@@ -79,7 +84,6 @@ export function Header({ onMenuClick, user, pageTitle = "Dashboard" }: HeaderPro
   const toggleDarkMode = useCallback(() => {
     setDarkMode(prev => {
       const newMode = !prev
-      // Add dark mode logic here
       toast({
         title: newMode ? "Dark Mode" : "Light Mode",
         description: `Switched to ${newMode ? "dark" : "light"} mode`,
@@ -174,32 +178,17 @@ export function Header({ onMenuClick, user, pageTitle = "Dashboard" }: HeaderPro
           <span className="sr-only">Toggle theme</span>
         </Button>
 
-        {/* Notifications */}
-        {/* <Button 
-          variant="ghost" 
-          size="icon" 
-          className="relative"
-          title="Notifications"
-        >
-          <Bell className="h-5 w-5" />
-          {notifications > 0 && (
-            <Badge 
-              variant="destructive" 
-              className="absolute -top-1 -right-1 h-5 w-5 rounded-full p-0 text-xs flex items-center justify-center"
-            >
-              {notifications > 99 ? "99+" : notifications}
-            </Badge>
-          )}
-          <span className="sr-only">
-            {notifications} notification{notifications !== 1 ? "s" : ""}
-          </span>
-        </Button> */}
-
         {/* User menu */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" className="relative h-8 w-8 rounded-full">
               <Avatar className="h-8 w-8">
+                {avatarUrl && (
+                  <AvatarImage 
+                    src={avatarUrl} 
+                    alt={user?.name || "User"} 
+                  />
+                )}
                 <AvatarFallback className="bg-blue-100 text-blue-600 text-sm font-medium">
                   {userInitials}
                 </AvatarFallback>
@@ -209,9 +198,20 @@ export function Header({ onMenuClick, user, pageTitle = "Dashboard" }: HeaderPro
           <DropdownMenuContent className="w-64" align="end" forceMount>
             {/* User Info Section */}
             <div className="flex items-center justify-start gap-2 p-2">
+              <Avatar className="h-10 w-10">
+                {avatarUrl && (
+                  <AvatarImage 
+                    src={avatarUrl} 
+                    alt={user?.name || "User"} 
+                  />
+                )}
+                <AvatarFallback className="bg-blue-100 text-blue-600 text-sm font-medium">
+                  {userInitials}
+                </AvatarFallback>
+              </Avatar>
               <div className="flex flex-col space-y-1 leading-none">
                 <p className="font-medium text-sm">{user?.name || "Unknown User"}</p>
-                <p className="w-[200px] truncate text-xs text-muted-foreground">
+                <p className="w-[180px] truncate text-xs text-muted-foreground">
                   {userEmail}
                 </p>
                 <div className="flex items-center gap-2 mt-1">
@@ -243,15 +243,6 @@ export function Header({ onMenuClick, user, pageTitle = "Dashboard" }: HeaderPro
               Settings
             </DropdownMenuItem>
             
-            {/* Mobile dark mode toggle */}
-            {/* <DropdownMenuItem 
-              className="cursor-pointer sm:hidden"
-              onClick={toggleDarkMode}
-            >
-              {darkMode ? <Sun className="mr-2 h-4 w-4" /> : <Moon className="mr-2 h-4 w-4" />}
-              {darkMode ? "Light Mode" : "Dark Mode"}
-            </DropdownMenuItem>
-             */}
             <DropdownMenuSeparator />
             <DropdownMenuItem 
               onClick={handleLogout} 
