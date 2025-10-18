@@ -93,6 +93,14 @@ export default function StudentDashboard() {
   const approvedReports = reports.reviewed || 0
   const progressValue = totalReports > 0 ? (approvedReports / totalReports) * 100 : 0
 
+  // Function to get activity link
+  const getActivityLink = (activity: any) => {
+    if (activity.type === "noc") return "/dashboard/student/noc"
+    if (activity.type === "report") return "/dashboard/student/reports"
+    if (activity.type === "certificate") return "/dashboard/student/certificates"
+    return "#"
+  }
+
   return (
     <AuthGuard allowedRoles={["student"]}>
       <DashboardLayout>
@@ -106,39 +114,45 @@ export default function StudentDashboard() {
             </p>
           </div>
 
-          {/* Stats */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            <StatCard
-              title="NOC Requests"
-              value={nocRequests.total}
-              subtitle={`${nocRequests.pending} pending`}
-              icon={<FileText className="h-8 w-8 text-blue-500" />}
-              color="from-blue-100 to-blue-50"
-            />
+          {/* Stats - Horizontal Scroll on Mobile */}
+          <div className="overflow-x-auto pb-4 -mx-4 px-4 md:mx-0 md:px-0">
+            <div className="flex md:grid md:grid-cols-2 lg:grid-cols-4 gap-6 min-w-max md:min-w-0">
+              <StatCard
+                title="NOC Requests"
+                value={nocRequests.total}
+                subtitle={`${nocRequests.pending} pending`}
+                icon={<FileText className="h-8 w-8 text-blue-500" />}
+                color="from-blue-100 to-blue-50"
+                href="/dashboard/student/noc"
+              />
 
-            <StatCard
-              title="Reports"
-              value={totalReports}
-              subtitle={`${reports.submitted} submitted`}
-              icon={<Calendar className="h-8 w-8 text-green-500" />}
-              color="from-green-100 to-green-50"
-            />
+              <StatCard
+                title="Reports"
+                value={totalReports}
+                subtitle={`${reports.submitted} submitted`}
+                icon={<Calendar className="h-8 w-8 text-green-500" />}
+                color="from-green-100 to-green-50"
+                href="/dashboard/student/reports"
+              />
 
-            <StatCard
-              title="Certificates"
-              value={certificates.total}
-              subtitle={`${certificates.approved} approved`}
-              icon={<Award className="h-8 w-8 text-purple-500" />}
-              color="from-purple-100 to-purple-50"
-            />
+              <StatCard
+                title="Certificates"
+                value={certificates.total}
+                subtitle={`${certificates.approved} approved`}
+                icon={<Award className="h-8 w-8 text-purple-500" />}
+                color="from-purple-100 to-purple-50"
+                href="/dashboard/student/certificates"
+              />
 
-            <StatCard
-              title="Opportunities"
-              value={opportunities.total}
-              subtitle="Available now"
-              icon={<Building className="h-8 w-8 text-orange-500" />}
-              color="from-orange-100 to-orange-50"
-            />
+              <StatCard
+                title="Opportunities"
+                value={opportunities.total}
+                subtitle="Available now"
+                icon={<Building className="h-8 w-8 text-orange-500" />}
+                color="from-orange-100 to-orange-50"
+                href="/dashboard/student/opportunities"
+              />
+            </div>
           </div>
 
           {/* Progress */}
@@ -178,7 +192,7 @@ export default function StudentDashboard() {
             </CardContent>
           </Card>
 
-          {/* Recent Activity */}
+          {/* Recent Activity with Links */}
           <Card className="shadow-md border-0">
             <CardHeader>
               <CardTitle className="text-indigo-700">Recent Activity</CardTitle>
@@ -187,25 +201,27 @@ export default function StudentDashboard() {
               {recentActivity.length > 0 ? (
                 <div className="space-y-3">
                   {recentActivity.slice(0, 5).map((activity, idx) => (
-                    <div key={idx} className="flex items-center justify-between bg-gray-50 p-3 rounded-lg">
-                      <div className="flex items-center gap-3">
-                        {activity.type === "noc" && <FileText className="h-5 w-5 text-blue-500" />}
-                        {activity.type === "report" && <Calendar className="h-5 w-5 text-green-500" />}
-                        {activity.type === "certificate" && <Award className="h-5 w-5 text-purple-500" />}
-                        <div>
-                          <p className="font-medium text-sm">{activity.title}</p>
-                          <p className="text-xs text-gray-500">{new Date(activity.created_at).toLocaleDateString()}</p>
+                    <Link key={idx} href={getActivityLink(activity)}>
+                      <div className="flex items-center justify-between bg-gray-50 p-3 rounded-lg hover:bg-gray-100 transition-colors cursor-pointer">
+                        <div className="flex items-center gap-3">
+                          {activity.type === "noc" && <FileText className="h-5 w-5 text-blue-500" />}
+                          {activity.type === "report" && <Calendar className="h-5 w-5 text-green-500" />}
+                          {activity.type === "certificate" && <Award className="h-5 w-5 text-purple-500" />}
+                          <div>
+                            <p className="font-medium text-sm">{activity.title}</p>
+                            <p className="text-xs text-gray-500">{new Date(activity.created_at).toLocaleDateString()}</p>
+                          </div>
                         </div>
+                        <Badge
+                          variant={activity.status === "approved" ? "default" : activity.status === "pending" ? "secondary" : "destructive"}
+                        >
+                          {activity.status === "approved" && <CheckCircle className="h-3 w-3 mr-1" />}
+                          {activity.status === "pending" && <Clock className="h-3 w-3 mr-1" />}
+                          {activity.status === "rejected" && <AlertCircle className="h-3 w-3 mr-1" />}
+                          {activity.status}
+                        </Badge>
                       </div>
-                      <Badge
-                        variant={activity.status === "approved" ? "default" : activity.status === "pending" ? "secondary" : "destructive"}
-                      >
-                        {activity.status === "approved" && <CheckCircle className="h-3 w-3 mr-1" />}
-                        {activity.status === "pending" && <Clock className="h-3 w-3 mr-1" />}
-                        {activity.status === "rejected" && <AlertCircle className="h-3 w-3 mr-1" />}
-                        {activity.status}
-                      </Badge>
-                    </div>
+                    </Link>
                   ))}
                 </div>
               ) : (
@@ -223,18 +239,20 @@ export default function StudentDashboard() {
 }
 
 // Helper Components
-function StatCard({ title, value, subtitle, icon, color }: any) {
+function StatCard({ title, value, subtitle, icon, color, href }: any) {
   return (
-    <Card className={`bg-gradient-to-br ${color} shadow-md border-0 rounded-xl`}>
-      <CardContent className="p-6 flex items-center justify-between">
-        <div>
-          <p className="text-sm font-medium text-gray-700">{title}</p>
-          <p className="text-2xl font-bold text-gray-900">{value}</p>
-          <p className="text-xs text-gray-500">{subtitle}</p>
-        </div>
-        <div className="bg-white p-2 rounded-lg shadow-sm">{icon}</div>
-      </CardContent>
-    </Card>
+    <Link href={href} className="min-w-[280px] md:min-w-0">
+      <Card className={`bg-gradient-to-br ${color} shadow-md border-0 rounded-xl hover:shadow-lg transition-shadow cursor-pointer h-full`}>
+        <CardContent className="p-6 flex items-center justify-between">
+          <div>
+            <p className="text-sm font-medium text-gray-700">{title}</p>
+            <p className="text-2xl font-bold text-gray-900">{value}</p>
+            <p className="text-xs text-gray-500">{subtitle}</p>
+          </div>
+          <div className="bg-white p-2 rounded-lg shadow-sm">{icon}</div>
+        </CardContent>
+      </Card>
+    </Link>
   )
 }
 
