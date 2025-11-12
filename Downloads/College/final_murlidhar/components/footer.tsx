@@ -73,7 +73,7 @@ export default function Footer() {
 
         {/* Divider */}
         <div className="border-t border-gray-700 pt-8 text-center text-gray-400 text-sm">
-          <p>© {currentYear} Murlidhar Ply & Hardware | Designed with ❤️ in Gujarat</p>
+          <p>© {currentYear} Murlidhar Ply & Hardware | Designed by Kirti Patel</p>
         </div>
       </div>
     </footer>
