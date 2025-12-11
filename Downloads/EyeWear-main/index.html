@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AIMOPTIC | Crafted for Your Eyes</title>
+
+    <script type="module">
+(async function() {
+  // Candidate app entry files to try (adjust/add if your project uses other names)
+  const candidates = [
+    '/src/main.jsx', '/src/main.js',
+    '/src/index.jsx', '/src/index.js',
+    '/main.js', '/app.js', '/index.js'
+  ];
+
+  // Helper: show overlay (re-usable)
+  function showOverlayText(title, message) {
+    let overlay = document.getElementById('app-error-overlay');
+    if (!overlay) {
+      overlay = document.createElement('div');
+      overlay.id = 'app-error-overlay';
+      Object.assign(overlay.style, {
+        position: 'fixed', inset: '0', display: 'flex', alignItems: 'center',
+        justifyContent: 'center', background: 'rgba(0,0,0,0.75)', zIndex: 99999,
+        color: '#fff', padding: '20px', fontFamily: 'system-ui, -apple-system'
+      });
+      const card = document.createElement('div');
+      Object.assign(card.style, {
+        maxWidth: '900px', width: '100%', padding: '18px', borderRadius: '10px',
+        background: 'linear-gradient(180deg,#111,#0b0b0b)', boxShadow: '0 8px 30px rgba(0,0,0,0.6)'
+      });
+      overlay.appendChild(card);
+      const h = document.createElement('h2'); h.textContent = title; h.style.margin = '0 0 8px 0';
+      const p = document.createElement('div'); p.id = 'app-error-text'; p.style.whiteSpace = 'pre-wrap';
+      card.appendChild(h); card.appendChild(p);
+      const btns = document.createElement('div'); btns.style.marginTop = '12px';
+      const r = document.createElement('button'); r.textContent = 'Reload'; r.onclick = ()=>location.reload();
+      const hbtn = document.createElement('button'); hbtn.textContent = 'Hide'; hbtn.style.marginLeft='8px'; hbtn.onclick = ()=>overlay.style.display='none';
+      Object.assign(r.style, {padding:'8px 10px', borderRadius:'8px', border: 'none', cursor: 'pointer', background:'#C5A059', color:'#0A0A0A'});
+      Object.assign(hbtn.style, {padding:'8px 10px', borderRadius:'8px', border: '1px solid rgba(255,255,255,0.06)', cursor: 'pointer', marginLeft:'8px'});
+      btns.appendChild(r); btns.appendChild(hbtn); card.appendChild(btns);
+      document.body.appendChild(overlay);
+    }
+    overlay.style.display = 'flex';
+    overlay.querySelector('#app-error-text').textContent = message;
+  }
+
+  // Render a simple fallback UI into #root so the page isn't black
+  function renderFallbackUI(note) {
+    const root = document.getElementById('root');
+    root.innerHTML = '';
+    const container = document.createElement('div');
+    container.style.minHeight = '100vh';
+    container.style.display = 'flex';
+    container.style.alignItems = 'center';
+    container.style.justifyContent = 'center';
+    container.style.flexDirection = 'column';
+    container.style.gap = '12px';
+    container.innerHTML = `
+      <div style="text-align:center; max-width:900px; padding:18px;">
+        <h1 style="margin:0 0 8px 0; font-size:24px">AIMOPTIC — UI not mounted</h1>
+        <p style="margin:0 0 12px 0; color:#ddd;">No JavaScript application was mounted into <code>#root</code>.</p>
+        <pre style="background:rgba(255,255,255,0.03); padding:12px; border-radius:8px; color:#eee; max-height:220px; overflow:auto;">${note}</pre>
+        <div style="margin-top:12px;">
+          <button onclick="location.reload()" style="padding:8px 12px; border-radius:8px; border:none; background:#C5A059; color:#0A0A0A; font-weight:700; cursor:pointer;">Reload</button>
+        </div>
+      </div>
+    `;
+    root.appendChild(container);
+  }
+
+  // Step 1: try to import React and ReactDOM from importmap (CDN)
+  let React, ReactDOMClient;
+  try {
+    React = await import('react');
+    ReactDOMClient = await import('react-dom/client');
+  } catch (err) {
+    const msg = `Failed to load React packages from importmap/CDN.\nThis usually means the CDN failed or importmap entries are blocked.\nConsole: ${err.message || err}\nCheck Network tab for failed requests.`;
+    console.error(msg, err);
+    renderFallbackUI(msg);
+    showOverlayText('Missing React / ReactDOM', msg);
+    return;
+  }
+
+  // Step 2: try to find and import your app entry module
+  let appMod = null;
+  let tried = [];
+  for (const path of candidates) {
+    try {
+      // try relative import first (without leading slash) then absolute
+      try { appMod = await import(path); } catch(e2) { appMod = await import(path.replace(/^\//,'')); }
+      if (appMod) { tried.push(path + ' (OK)'); break; }
+    } catch (e) {
+      tried.push(path + ' (not found)');
+    }
+  }
+
+  // Step 3: if app module not found, render helpful fallback with details
+  if (!appMod) {
+    const note = `No app entry module found. I tried these paths:\n\n${tried.join('\n')}\n\nPossible fixes:\n- Make sure your app's entry file (e.g. src/main.jsx or src/main.js) exists and is served.\n- If using a bundler (Vite/Parcel/webpack), build the app and include the generated bundle.\n- Serve the app over HTTP (do not open index.html via file://).\n- Check the Network tab for failed CDN/importmap requests.\n`;
+    console.warn(note);
+    renderFallbackUI(note);
+    showOverlayText('No UI mounted inside #root', note);
+    return;
+  }
+
+  // Step 4: mount the app if it exports a default component or a "mount" function
+  try {
+    const rootEl = document.getElementById('root');
+    if (!rootEl) throw new Error('#root element not present in DOM.');
+
+    // common export patterns:
+    // - default export is the App component (React)
+    // - module exports a `mount` or `start` function to bootstrap
+    const AppComp = appMod.default || appMod.App;
+    const mountFn = appMod.mount || appMod.start;
+
+    if (mountFn && typeof mountFn === 'function') {
+      // some apps expect a mount API: mount(document.getElementById('root'))
+      await mountFn(rootEl);
+      console.info('App mounted via exported mount/start function.');
+      return;
+    }
+
+    if (AppComp) {
+      // render React component
+      ReactDOMClient.createRoot(rootEl).render(React.createElement(AppComp));
+      console.info('App mounted by rendering default export component.');
+      return;
+    }
+
+    // If neither present, show helpful error
+    const note = `App module loaded but did not export a React component (default) or mount/start function.\nModule keys: ${Object.keys(appMod).join(', ')}`;
+    console.warn(note);
+    renderFallbackUI(note);
+    showOverlayText('Loaded module has no mountable export', note);
+  } catch (err) {
+    console.error('Error while attempting to mount app:', err);
+    const note = `Error during app mount:\n${err && err.stack ? err.stack : String(err)}\n\nCheck console for stack trace and Network tab for failed module loads.`;
+    renderFallbackUI(note);
+    showOverlayText('Runtime error while mounting app', note);
+  }
+})();
+</script>
+
+    <!-- ======= Safe storage stub: put BEFORE any other script to avoid "Access to storage is not allowed" crashes ======= -->
+    <script>
+      (function () {
+        try {
+          // Quick test for synchronous storage access
+          const test = "__storage_sanity_test__";
+          if (typeof window !== "undefined" && window.localStorage) {
+            window.localStorage.setItem(test, test);
+            window.localStorage.removeItem(test);
+          }
+        } catch (err) {
+          // Replace localStorage & sessionStorage with in-memory fallbacks so third-party libs don't throw.
+          console.warn("localStorage/sessionStorage blocked — using in-memory fallback", err);
+          (function () {
+            const _store = Object.create(null);
+            const makeFallback = () => ({
+              getItem(key) {
+                return Object.prototype.hasOwnProperty.call(_store, key) ? _store[key] : null;
+              },
+              setItem(key, value) {
+                _store[key] = String(value);
+              },
+              removeItem(key) {
+                delete _store[key];
+              },
+              clear() {
+                for (const k of Object.keys(_store)) delete _store[k];
+              }
+            });
+            try {
+              Object.defineProperty(window, "localStorage", {
+                configurable: true,
+                enumerable: true,
+                value: makeFallback()
+              });
+              Object.defineProperty(window, "sessionStorage", {
+                configurable: true,
+                enumerable: true,
+                value: makeFallback()
+              });
+            } catch (e) {
+              // If defining properties fails (some strict contexts), fall back to globals
+              window.localStorage = makeFallback();
+              window.sessionStorage = makeFallback();
+            }
+          })();
+        }
+      })();
+    </script>
+
+    <!-- Tailwind CDN (ok for prototype) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              gold: {
+                100: '#F9F1D8',
+                300: '#E6D298',
+                500: '#C5A059',
+                700: '#8C6E36',
+              },
+              luxury: {
+                black: '#0A0A0A',
+                charcoal: '#121212',
+                gray: '#1F1F1F'
+              }
+            },
+            fontFamily: {
+              sans: ['SF Pro Display', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'Helvetica Neue', 'Arial', 'sans-serif'],
+            },
+            animation: {
+              'spin-slow': 'spin 12s linear infinite',
+              'float': 'float 6s ease-in-out infinite',
+            },
+            keyframes: {
+              float: {
+                '0%, 100%': { transform: 'translateY(0)' },
+                '50%': { transform: 'translateY(-20px)' },
+              }
+            }
+          },
+        },
+      };
+    </script>
+
+    <style>
+      html {
+        scroll-behavior: smooth;
+        scroll-padding-top: 100px; /* Offset for fixed navbar */
+      }
+      body {
+        background-color: #050505;
+        color: #ffffff;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+        overflow-x: hidden;
+      }
+      /* Hide scrollbar for Chrome, Safari and Opera */
+      .no-scrollbar::-webkit-scrollbar {
+          display: none;
+      }
+      /* Hide scrollbar for IE, Edge and Firefox */
+      .no-scrollbar {
+          -ms-overflow-style: none;  /* IE and Edge */
+          scrollbar-width: none;  /* Firefox */
+      }
+
+      /* Error overlay styles */
+      #app-error-overlay {
+        position: fixed;
+        inset: 0;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        background: rgba(0,0,0,0.7);
+        z-index: 99999;
+        color: #fff;
+        padding: 24px;
+        font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+      }
+      #app-error-overlay .card {
+        max-width: 880px;
+        width: 100%;
+        background: linear-gradient(180deg, rgba(18,18,18,0.95), rgba(10,10,10,0.95));
+        border-radius: 12px;
+        box-shadow: 0 8px 30px rgba(0,0,0,0.6);
+        padding: 20px;
+        border: 1px solid rgba(255,255,255,0.04);
+      }
+      #app-error-overlay h2 { margin: 0 0 8px 0; font-size: 18px; }
+      #app-error-overlay pre {
+        white-space: pre-wrap;
+        word-break: break-word;
+        background: rgba(255,255,255,0.02);
+        padding: 12px;
+        border-radius: 8px;
+        margin-top: 12px;
+        max-height: 240px;
+        overflow: auto;
+      }
+      #app-error-overlay button {
+        margin-top: 12px;
+        padding: 8px 12px;
+        border-radius: 8px;
+        border: none;
+        cursor: pointer;
+        background: #C5A059;
+        color: #0A0A0A;
+        font-weight: 600;
+      }
+    </style>
+
+    <script type="importmap">
+{
+  "imports": {
+    "@react-three/drei": "https://aistudiocdn.com/@react-three/drei@^10.7.7",
+    "@react-three/fiber": "https://aistudiocdn.com/@react-three/fiber@^9.4.2",
+    "three": "https://aistudiocdn.com/three@^0.181.2",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.1/",
+    "react/": "https://aistudiocdn.com/react@^19.2.1/",
+    "react": "https://aistudiocdn.com/react@^19.2.1",
+    "framer-motion": "https://aistudiocdn.com/framer-motion@^12.23.25",
+    "lucide-react": "https://aistudiocdn.com/lucide-react@^0.556.0"
+  }
+}
+</script>
+
+    <!-- Global error capture: first error/unhandled rejection is displayed in overlay and logged -->
+    <script>
+      (function () {
+        let firstError = null;
+
+        function showOverlay(errMsg) {
+          // create overlay if not present
+          if (!document.getElementById('app-error-overlay')) {
+            const overlay = document.createElement('div');
+            overlay.id = 'app-error-overlay';
+            overlay.innerHTML = `
+              <div class="card">
+                <h2>Application failed to start</h2>
+                <div>We caught a runtime error while loading the app — check the message below and open the browser console for full stack trace.</div>
+                <pre id="app-error-msg"></pre>
+                <div style="display:flex; gap:8px;">
+                  <button id="app-error-reload">Reload page</button>
+                  <button id="app-error-hide">Hide</button>
+                </div>
+              </div>
+            `;
+            document.body.appendChild(overlay);
+            overlay.style.display = 'flex';
+            overlay.querySelector('#app-error-reload').addEventListener('click', ()=>location.reload());
+            overlay.querySelector('#app-error-hide').addEventListener('click', ()=>overlay.style.display='none');
+          } else {
+            document.getElementById('app-error-overlay').style.display = 'flex';
+          }
+          const el = document.getElementById('app-error-msg');
+          if (el) el.textContent = errMsg;
+        }
+
+        window.addEventListener('error', (ev) => {
+          if (!firstError) {
+            firstError = ev.error || ev.message || String(ev);
+            console.error('[Captured error]', ev);
+            // Defer overlay until DOM ready
+            if (document.readyState === 'loading') {
+              window.addEventListener('DOMContentLoaded', () => showOverlay(String(firstError)));
+            } else {
+              showOverlay(String(firstError));
+            }
+          }
+        });
+
+        window.addEventListener('unhandledrejection', (ev) => {
+          const reason = ev.reason ? (ev.reason.stack || ev.reason) : 'Unhandled promise rejection';
+          if (!firstError) {
+            firstError = reason;
+            console.error('[Captured unhandledrejection]', ev);
+            if (document.readyState === 'loading') {
+              window.addEventListener('DOMContentLoaded', () => showOverlay(String(reason)));
+            } else {
+              showOverlay(String(reason));
+            }
+          }
+        });
+
+        // Watchdog: if #root is empty after a short delay, show a hint overlay (not necessarily an error)
+        function startMountWatchdog() {
+          const checkDelay = 1400; // ms - adjust if your app takes longer to boot
+          setTimeout(() => {
+            const root = document.getElementById('root');
+            if (!root) return;
+            // If root has no rendered children (or only whitespace), show a hint but only if no error already present
+            const hasChildren = root.children && root.children.length > 0;
+            if (!hasChildren && !firstError) {
+              const hint = `No UI mounted inside #root. Possible causes:
+- A JS runtime error prevented React from mounting (check Console).
+- Remote importmap modules failed to load (check Network).
+- You opened the file with file:// (use a local HTTP server).
+`;
+              showOverlay(hint);
+              console.info('[mount-watchdog]', hint);
+            }
+          }, checkDelay);
+        }
+
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', startMountWatchdog);
+        } else {
+          startMountWatchdog();
+        }
+      })();
+    </script>
+
+  </head>
+  <body>
+    <div id="root"></div>
+
+    <!-- end-of-body hint: serve via local server, not file:// -->
+    <script>
+      // Quick friendly console hint for common issues
+      (function(){
+        try {
+          // If running on file://, warn the developer
+          if (location.protocol === 'file:') {
+            console.warn("You're opening this page with file:// — serve it over HTTP (e.g. `python -m http.server 3000`) for correct module, importmap and storage behavior.");
+          }
+        } catch(e){}
+      })();
+    </script>
+  </body>
+</html>
